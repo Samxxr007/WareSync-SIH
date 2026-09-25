@@ -149,7 +149,7 @@ export const Preloader: React.FC = () => {
         >
           <div style={{ fontSize: '12px', fontWeight: 700, color: '#BAC7D5', borderBottom: '1px solid #28323B', paddingBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
             <Cpu size={15} color="#1769AA" />
-            ONBOARD EDGE PROFILE
+            TARGET EDGE PROFILE
           </div>
 
           <div>

@@ -9,6 +9,7 @@ import {
   Network,
   Package,
   Radio,
+  Share2,
   SlidersHorizontal,
   Workflow,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ export const LeftNav: React.FC = () => {
     { id: 'Overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
     { id: 'Designer', label: 'Warehouse Designer', icon: <Layers size={16} /> },
     { id: 'Simulation', label: 'Simulation', icon: <Cpu size={16} /> },
+    { id: 'Network', label: 'P2P Network', icon: <Share2 size={16} /> },
     { id: 'Fleet', label: 'AMR Fleet', icon: <Radio size={16} /> },
     { id: 'Tasks', label: 'Tasks & Routing', icon: <ListTodo size={16} /> },
     { id: 'Inventory', label: 'Inventory', icon: <Package size={16} /> },
@@ -42,6 +44,7 @@ export const LeftNav: React.FC = () => {
     setActiveNav(id);
     if (id === 'Designer') setMode('DESIGN');
     else if (id === 'Simulation') setMode('SIMULATE');
+    else if (id === 'Network') setMode('SIMULATE');
     else if (id === 'Fleet') setMode('OPERATE');
     else if (id === 'Validation') setMode('VALIDATE');
     else if (id === 'Deployment') setMode('DEPLOY');

@@ -2,6 +2,7 @@ import { NavigationGraph } from '../compiler/navigationGraph.js';
 import { StopAndWaitCoordinator } from '../coordination/baseline/stopAndWait.js';
 import { ConflictEvent, detectPairwiseConflict } from '../coordination/conflictDetector.js';
 import { DeadlockDetector, WaitForRelation } from '../coordination/deadlockDetector.js';
+import { NetworkStateTracker, PeerLinkState } from '../coordination/index.js';
 import { resolveRightOfWay } from '../coordination/rightOfWayResolver.js';
 import { allocateTask, WarehouseTask } from '../planner/taskAllocator.js';
 import { AMRObject, Floor, FloorConnection, WarehouseModel } from '../warehouse/types.js';
@@ -33,6 +34,7 @@ export class SimulationEngine {
   private stopAndWaitCoordinator = new StopAndWaitCoordinator();
   private emergencyManager = new EmergencyManager();
   private metricsCollector = new MetricsCollector();
+  private networkTracker = new NetworkStateTracker();
   private eventLog: SimEvent[] = [];
 
   constructor(
@@ -149,6 +151,13 @@ export class SimulationEngine {
             const replanned = robot.planRoute(this.navGraph, startNode, goalNode, this.simTimeSec, activeMode, blockedSet);
             if (replanned) {
               this.logEvent(`✓ ${robot.id} dynamically recalculated route around newly placed ${obj.type} via SIPP!`, 'ROBOT', 'INFO');
+              this.networkTracker.logMessage(
+                robot.id,
+                'BROADCAST',
+                'LOCAL_REPLAN',
+                `Dynamically rerouted around ${obj.type} via local SIPP reservation tables`,
+                this.simTimeSec
+              );
             }
           }
         }
@@ -353,7 +362,7 @@ export class SimulationEngine {
       .map((r) => ({
         ...r.initialSpec,
         currentFloorId: r.floorId,
-        position: [...r.position],
+        position: [...r.position] as [number, number, number],
         batteryPercent: r.batteryPercent,
       }));
 
@@ -432,6 +441,23 @@ export class SimulationEngine {
       }
     }
 
+    // Periodic intent broadcast into inspector log (every ~1.0 sim-second)
+    const prevSec = Math.floor(this.simTimeSec - 0.2);
+    const currSec = Math.floor(this.simTimeSec);
+    if (currSec !== prevSec) {
+      const activeRobots = robotList.filter((r) => r.status === 'MOVING');
+      for (const r of activeRobots.slice(0, 2)) {
+        const nextWp = r.currentPath[r.currentPathIndex];
+        this.networkTracker.logMessage(
+          r.id,
+          'ALL',
+          'INTENT_BROADCAST',
+          `Target: ${nextWp?.nodeId || 'waypoint'} | ${r.currentPath.length - r.currentPathIndex} intervals | load: ${r.currentPayloadKg > 0 ? 'Loaded' : 'Empty'}`,
+          this.simTimeSec
+        );
+      }
+    }
+
     // Pairwise conflict check & resolution
     for (let i = 0; i < robotList.length; i++) {
       const robotA = robotList[i]!;
@@ -455,10 +481,24 @@ export class SimulationEngine {
           if (aIsStopped && robotB.status === 'MOVING') {
             robotB.status = 'YIELDING';
             robotB.speedMps = 0;
+            this.networkTracker.logMessage(
+              robotB.id,
+              robotA.id,
+              'YIELD_REQUEST',
+              `Safety bumper distance alert (<2.0m). Holding position behind ${robotA.id}.`,
+              this.simTimeSec
+            );
             continue;
           } else if (bIsStopped && robotA.status === 'MOVING') {
             robotA.status = 'YIELDING';
             robotA.speedMps = 0;
+            this.networkTracker.logMessage(
+              robotA.id,
+              robotB.id,
+              'YIELD_REQUEST',
+              `Safety bumper distance alert (<2.0m). Holding position behind ${robotB.id}.`,
+              this.simTimeSec
+            );
             continue;
           }
         }
@@ -476,6 +516,14 @@ export class SimulationEngine {
             timestampSec: this.simTimeSec,
             resolved: false,
           };
+
+          this.networkTracker.logMessage(
+            robotA.id,
+            robotB.id,
+            'CONFLICT_NOTIFICATION',
+            `Pairwise spatial proximity conflict at ${conflict.locationNodeId} (dist: ${dist.toFixed(2)}m)`,
+            this.simTimeSec
+          );
 
           const resolved = resolveRightOfWay(
             conflict,
@@ -508,6 +556,50 @@ export class SimulationEngine {
                 'WARNING'
               );
               this.metricsCollector.recordConflictResolved();
+              const scoreA = resolved.resolution?.priorityScoreA ?? 50;
+              const scoreB = resolved.resolution?.priorityScoreB ?? 50;
+              const higherScore = Math.max(scoreA, scoreB);
+              const lowerScore = Math.min(scoreA, scoreB);
+
+              this.networkTracker.logMessage(
+                proceeding.id,
+                yielding.id,
+                'YIELD_REQUEST',
+                `Priority score ${higherScore.toFixed(0)} > ${lowerScore.toFixed(0)}. Requesting AMR yield right-of-way.`,
+                this.simTimeSec
+              );
+
+              this.networkTracker.logMessage(
+                yielding.id,
+                proceeding.id,
+                'YIELD_ACCEPT',
+                `Yield accepted by ${yielding.id}. Pausing at node ${conflict.locationNodeId}.`,
+                this.simTimeSec
+              );
+
+              this.networkTracker.recordLocalDecision({
+                robotId: proceeding.id,
+                simTimeSec: this.simTimeSec,
+                activeGoal: proceeding.currentTask ? `Rack ${proceeding.currentTask.pickupRackId}` : 'Target',
+                status: 'PROCEEDING',
+                evaluatedPeers: [yielding.id],
+                localPriorityScore: higherScore,
+                peerPriorityScore: lowerScore,
+                decisionReason: `Local priority (${higherScore.toFixed(0)}) exceeds peer (${lowerScore.toFixed(0)}). Task: ${proceeding.currentTask?.priority || 'NORMAL'}.`,
+                nextPlannedAction: `Maintain speed 1.5 m/s through intersection ${conflict.locationNodeId}`,
+              });
+
+              this.networkTracker.recordLocalDecision({
+                robotId: yielding.id,
+                simTimeSec: this.simTimeSec,
+                activeGoal: yielding.currentTask ? `Rack ${yielding.currentTask.pickupRackId}` : 'Target',
+                status: 'YIELDING',
+                evaluatedPeers: [proceeding.id],
+                localPriorityScore: lowerScore,
+                peerPriorityScore: higherScore,
+                decisionReason: `Peer priority (${higherScore.toFixed(0)}) exceeds local (${lowerScore.toFixed(0)}). Yielding right-of-way.`,
+                nextPlannedAction: `Wait until peer clears conflict radius (<2.0m), then resume SIPP path`,
+              });
             }
           }
         }
@@ -528,6 +620,24 @@ export class SimulationEngine {
         if (!nearObstacle) {
           robot.status = 'MOVING';
           this.logEvent(`${robot.id} conflict cleared. Resuming trajectory.`, 'ROBOT', 'INFO');
+          this.networkTracker.logMessage(
+            robot.id,
+            'ALL',
+            'LOCAL_REPLAN',
+            `Corridor clearance confirmed. Resuming trajectory via local SIPP.`,
+            this.simTimeSec
+          );
+          this.networkTracker.recordLocalDecision({
+            robotId: robot.id,
+            simTimeSec: this.simTimeSec,
+            activeGoal: robot.currentTask ? `Rack ${robot.currentTask.pickupRackId}` : 'Target',
+            status: 'PROCEEDING',
+            evaluatedPeers: [],
+            localPriorityScore: 50,
+            peerPriorityScore: 0,
+            decisionReason: 'Conflict zone cleared. No peer obstructions in safe interval window.',
+            nextPlannedAction: 'Accelerating to cruising speed 1.5 m/s',
+          });
         }
         // Deadlock watchdog: YIELDING robot stuck for >8s → force-resume
         if (robot.waitTimeSec > 8) {
@@ -565,6 +675,13 @@ export class SimulationEngine {
             robot.waitTimeSec = 0;
             robot.status = 'MOVING';
             this.logEvent(`${robot.id} elevator watchdog: replanned + force-resumed after 20s stall.`, 'ROBOT', 'INFO');
+            this.networkTracker.logMessage(
+              robot.id,
+              'ALL',
+              'LOCAL_REPLAN',
+              `Elevator stall watchdog: re-planned alternative route to ${goalNode}`,
+              this.simTimeSec
+            );
           }
         }
       }
@@ -623,6 +740,55 @@ export class SimulationEngine {
     }
   }
 
+  public triggerIntersectionDemo(): void {
+    const r1 = this.robots.get('AMR-01');
+    const r2 = this.robots.get('AMR-02');
+    if (r1 && r2) {
+      r1.floorId = 'floor-1';
+      r2.floorId = 'floor-1';
+      r1.position = [-8, 0, 0];
+      r2.position = [8, 0, 0];
+      r1.status = 'MOVING';
+      r2.status = 'MOVING';
+      r1.speedMps = 1.5;
+      r2.speedMps = 1.5;
+      const start1 = this.findNearestNodeId([-8, 0, 0], 'floor-1');
+      const goal1 = this.findNearestNodeId([8, 0, 0], 'floor-1');
+      const start2 = this.findNearestNodeId([8, 0, 0], 'floor-1');
+      const goal2 = this.findNearestNodeId([-8, 0, 0], 'floor-1');
+      const activeMode: 'BASELINE' | 'PROPOSED' = this.mode === 'SIDE_BY_SIDE' ? 'PROPOSED' : this.mode;
+      r1.planRoute(this.navGraph, start1, goal1, this.simTimeSec, activeMode, new Set());
+      r2.planRoute(this.navGraph, start2, goal2, this.simTimeSec, activeMode, new Set());
+      this.logEvent('DEMO: Triggered intersection convergence between AMR-01 and AMR-02.', 'CONFLICT', 'WARNING');
+      this.networkTracker.logMessage(r1.id, r2.id, 'INTENT_BROADCAST', `En route to ${goal1} via intersection node`, this.simTimeSec);
+      this.networkTracker.logMessage(r2.id, r1.id, 'INTENT_BROADCAST', `En route to ${goal2} via intersection node`, this.simTimeSec);
+    }
+  }
+
+  public setPeerDegradation(
+    robotA: string,
+    robotB: string,
+    state: PeerLinkState,
+    latencyMs = 250,
+    packetLoss = 0.35
+  ): void {
+    this.networkTracker.setLinkOverride(robotA, robotB, state, latencyMs, packetLoss);
+    this.logEvent(
+      `NETWORK: Peer link ${robotA} ↔ ${robotB} set to ${state} (${latencyMs}ms, ${(packetLoss * 100).toFixed(0)}% loss).`,
+      'SYSTEM',
+      'WARNING'
+    );
+  }
+
+  public restoreAllLinks(): void {
+    this.networkTracker.restoreAllLinks();
+    this.logEvent('NETWORK: All peer-to-peer links restored to CONNECTED (healthy).', 'SYSTEM', 'INFO');
+  }
+
+  public clearNetworkMessageLog(): void {
+    this.networkTracker.clearMessages();
+  }
+
   public createFrameSnapshot(): SimulationFrame {
     const chargersList: ChargerSimulationState[] = Array.from(this.chargers.values()).map((c) => ({
       id: c.id,
@@ -640,6 +806,11 @@ export class SimulationEngine {
       events: [...this.eventLog],
       metrics: this.metricsCollector.getSnapshot(),
       blockedNodeIds: Array.from(this.emergencyManager.getActiveBlockedNodes()),
+      network: this.networkTracker.getSnapshot(
+        this.mode,
+        this.simTimeSec,
+        Array.from(this.robots.keys())
+      ),
     };
   }
 }

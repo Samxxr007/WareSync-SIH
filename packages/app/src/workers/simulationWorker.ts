@@ -79,5 +79,38 @@ self.onmessage = (e: MessageEvent) => {
       }
       break;
     }
+
+    case 'TRIGGER_INTERSECTION_DEMO': {
+      if (engine) {
+        engine.triggerIntersectionDemo();
+        self.postMessage({ type: 'FRAME', frame: engine.createFrameSnapshot() });
+      }
+      break;
+    }
+
+    case 'SET_PEER_DEGRADATION': {
+      if (engine && payload) {
+        const { robotA, robotB, state, latencyMs, packetLoss } = payload;
+        engine.setPeerDegradation(robotA, robotB, state, latencyMs, packetLoss);
+        self.postMessage({ type: 'FRAME', frame: engine.createFrameSnapshot() });
+      }
+      break;
+    }
+
+    case 'RESTORE_PEER_LINKS': {
+      if (engine) {
+        engine.restoreAllLinks();
+        self.postMessage({ type: 'FRAME', frame: engine.createFrameSnapshot() });
+      }
+      break;
+    }
+
+    case 'CLEAR_MESSAGE_LOG': {
+      if (engine) {
+        engine.clearNetworkMessageLog();
+        self.postMessage({ type: 'FRAME', frame: engine.createFrameSnapshot() });
+      }
+      break;
+    }
   }
 };

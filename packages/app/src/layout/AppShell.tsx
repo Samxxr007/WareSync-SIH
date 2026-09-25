@@ -22,6 +22,7 @@ import { ResourcesScreen } from '../ui/screens/ResourcesScreen';
 import { RulesScreen } from '../ui/screens/RulesScreen';
 import { ValidationScreen } from '../ui/screens/ValidationScreen';
 import { DeploymentScreen } from '../ui/screens/DeploymentScreen';
+import { NetworkScreen } from '../ui/screens/NetworkScreen';
 import { BenchmarkScreen } from '../ui/benchmark/BenchmarkScreen';
 import { Preloader } from '../ui/preloader/Preloader';
 import { DragOverlayHtml } from '../ui/designer/DragOverlay';
@@ -39,6 +40,7 @@ export const AppShell: React.FC = () => {
 
   const renderMainCenter = () => {
     if (activeNav === 'Overview') return <OverviewScreen />;
+    if (activeNav === 'Network') return <NetworkScreen />;
     if (activeNav === 'Fleet') return <FleetScreen />;
     if (activeNav === 'Tasks') return <TasksScreen />;
     if (activeNav === 'Inventory') return <InventoryScreen />;

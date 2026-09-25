@@ -1,4 +1,5 @@
 import { AMRStatus, Vec3 } from '../warehouse/types.js';
+import { NetworkStateSnapshot } from '../coordination/networkTypes.js';
 
 export type SimulationMode = 'BASELINE' | 'PROPOSED' | 'SIDE_BY_SIDE';
 
@@ -72,4 +73,5 @@ export interface SimulationFrame {
   events: SimEvent[];
   metrics: SimMetrics;
   blockedNodeIds: string[];
+  network?: NetworkStateSnapshot;
 }

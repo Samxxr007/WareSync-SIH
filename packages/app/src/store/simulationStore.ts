@@ -14,6 +14,7 @@ import { create } from 'zustand';
 import {
   compileWarehouse,
   INITIAL_DEMO_TASKS,
+  PeerLinkState,
   SimulationEngine,
   SimulationFrame,
   SimulationMode,
@@ -51,6 +52,10 @@ interface SimulationStore {
   addTask: (task: WarehouseTask) => void;
   addTasks: (tasks: WarehouseTask[]) => void;
   addDynamicObstacle: (obj: any) => void;
+  triggerIntersectionDemo: () => void;
+  setPeerDegradation: (robotA: string, robotB: string, state: PeerLinkState, latencyMs?: number, packetLoss?: number) => void;
+  restoreAllLinks: () => void;
+  clearNetworkMessageLog: () => void;
 }
 
 export const useSimulationStore = create<SimulationStore>((set, get) => {
@@ -236,6 +241,49 @@ export const useSimulationStore = create<SimulationStore>((set, get) => {
       } else if (sideEngine) {
         sideEngine.addDynamicObstacle(obj);
         if (sideBaseline) sideBaseline.addDynamicObstacle(JSON.parse(JSON.stringify(obj)));
+        set({ currentFrame: sideEngine.createFrameSnapshot() });
+      }
+    },
+
+    triggerIntersectionDemo: () => {
+      const { mode } = get();
+      if (mode !== 'SIDE_BY_SIDE' && worker) {
+        worker.postMessage({ type: 'TRIGGER_INTERSECTION_DEMO' });
+      } else if (sideEngine) {
+        sideEngine.triggerIntersectionDemo();
+        set({ currentFrame: sideEngine.createFrameSnapshot() });
+      }
+    },
+
+    setPeerDegradation: (robotA: string, robotB: string, state: PeerLinkState, latencyMs?: number, packetLoss?: number) => {
+      const { mode } = get();
+      if (mode !== 'SIDE_BY_SIDE' && worker) {
+        worker.postMessage({
+          type: 'SET_PEER_DEGRADATION',
+          payload: { robotA, robotB, state, latencyMs, packetLoss },
+        });
+      } else if (sideEngine) {
+        sideEngine.setPeerDegradation(robotA, robotB, state, latencyMs, packetLoss);
+        set({ currentFrame: sideEngine.createFrameSnapshot() });
+      }
+    },
+
+    restoreAllLinks: () => {
+      const { mode } = get();
+      if (mode !== 'SIDE_BY_SIDE' && worker) {
+        worker.postMessage({ type: 'RESTORE_PEER_LINKS' });
+      } else if (sideEngine) {
+        sideEngine.restoreAllLinks();
+        set({ currentFrame: sideEngine.createFrameSnapshot() });
+      }
+    },
+
+    clearNetworkMessageLog: () => {
+      const { mode } = get();
+      if (mode !== 'SIDE_BY_SIDE' && worker) {
+        worker.postMessage({ type: 'CLEAR_MESSAGE_LOG' });
+      } else if (sideEngine) {
+        sideEngine.clearNetworkMessageLog();
         set({ currentFrame: sideEngine.createFrameSnapshot() });
       }
     },

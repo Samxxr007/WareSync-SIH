@@ -55,26 +55,32 @@ export const DemoScenarioBar: React.FC = () => {
       },
     },
     {
-      title: '6. Block Main Aisle & Trigger SIPP Reroute',
+      title: '6. P2P Network Topology & Live Packet Inspector',
+      action: () => {
+        setActiveNav('Network');
+      },
+    },
+    {
+      title: '7. Block Main Aisle & Trigger SIPP Reroute',
       action: () => {
         triggerEmergency('BLOCKED_AISLE', 'floor-1', ['node_floor-1_0_-4'], 'Pallet dropped in central corridor');
       },
     },
     {
-      title: '7. Capability Filtering & Task Dispatch',
+      title: '8. Capability Filtering & Task Dispatch',
       action: () => {
         setActiveNav('Tasks');
       },
     },
     {
-      title: '8. Simulate Hazard & Fire Emergency Isolation',
+      title: '9. Simulate Hazard & Fire Emergency Isolation',
       action: () => {
         setActiveNav('Simulation');
         triggerEmergency('FIRE', 'floor-2', ['node_floor-2_0_0'], 'Thermal spike detected near Rack R12');
       },
     },
     {
-      title: '9. Side-by-Side Baseline vs Proposed',
+      title: '10. Side-by-Side Baseline vs Proposed',
       action: () => {
         setActiveNav('Simulation');
         setSideBySideMode(true);
@@ -83,13 +89,13 @@ export const DemoScenarioBar: React.FC = () => {
       },
     },
     {
-      title: '10. Benchmark & Improvement Metrics',
+      title: '11. Benchmark & Improvement Metrics',
       action: () => {
         setActiveNav('Validation');
       },
     },
     {
-      title: '11. Machine-Ready VDA5050 & ROS2 Export',
+      title: '12. Machine-Ready VDA5050 & ROS2 Export',
       action: () => {
         setActiveNav('Deployment');
       },

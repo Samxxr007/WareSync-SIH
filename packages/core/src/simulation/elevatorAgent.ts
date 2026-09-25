@@ -29,13 +29,13 @@ export class ElevatorAgent {
     this.targetHeightMeters = this.currentHeightMeters;
   }
 
-  public requestElevator(robotId: string, targetFloorId: string): void {
+  public requestElevator(robotId: string, callerFloorId: string): void {
     if (!this.queueRobotIds.includes(robotId) && this.occupantRobotId !== robotId) {
       this.queueRobotIds.push(robotId);
     }
-    // If elevator has no occupant, dispatch it towards the calling floor
+    // Dispatch elevator to the CALLER's floor so it can board — not to the destination
     if (!this.occupantRobotId) {
-      this.targetHeightMeters = this.floorElevations[targetFloorId] ?? this.currentHeightMeters;
+      this.targetHeightMeters = this.floorElevations[callerFloorId] ?? this.currentHeightMeters;
     }
   }
 
