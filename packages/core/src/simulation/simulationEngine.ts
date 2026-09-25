@@ -296,8 +296,8 @@ export class SimulationEngine {
               'INFO'
             );
           }
-        } else if (waitingList.length > 0) {
-          // 2. No robot ready on current floor: dispatch cab to highest priority waiter's floor
+        } else if (currentFloorWaiters.length === 0 && waitingList.length > 0) {
+          // 2. Only dispatch cab to another floor if NO robots on the current floor need the elevator
           const topWaiter = waitingList[0]!;
           if (topWaiter.robot.floorId !== currentCabFloorId) {
             elev.requestElevator(topWaiter.robot.id, topWaiter.robot.floorId);
@@ -441,10 +441,6 @@ export class SimulationEngine {
         if (robotA.floorId !== robotB.floorId) continue;
         if (robotA.currentPath.length === 0 || robotB.currentPath.length === 0) continue;
 
-        // If both robots are in the elevator queue, their standoff positions are managed by runElevatorOrchestration
-        if (elevatorQueuedIds.has(robotA.id) && elevatorQueuedIds.has(robotB.id)) {
-          continue;
-        }
 
         const dx = robotA.position[0] - robotB.position[0];
         const dz = robotA.position[2] - robotB.position[2];
