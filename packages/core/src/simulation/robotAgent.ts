@@ -179,8 +179,8 @@ export class RobotAgent {
     if (this.currentPath.length > 0 && this.currentPathIndex < this.currentPath.length) {
       const targetWaypoint = this.currentPath[this.currentPathIndex]!;
 
-      // If yielding in PROPOSED mode, pause speed to give proceeding AMR right-of-way
-      if (this.status === 'YIELDING') {
+      // If yielding or waiting (e.g. for elevator or queue line), pause speed
+      if (this.status === 'YIELDING' || this.status === 'WAITING') {
         this.speedMps = 0;
         this.waitTimeSec += dtSec;
         return;
@@ -221,6 +221,7 @@ export class RobotAgent {
         // If this waypoint is an elevator transition to a different floor, do NOT advance!
         // The simulation engine elevator orchestrator will advance the robot once the elevator cab reaches destination.
         if (targetWaypoint.nodeId.startsWith('elev_node_') && targetWaypoint.floorId !== this.floorId) {
+          this.status = 'WAITING';
           this.speedMps = 0;
           return;
         }
