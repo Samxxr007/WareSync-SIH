@@ -26,19 +26,19 @@ WareSync enforces a strict architectural boundary: **safety-critical navigation 
 ```mermaid
 flowchart TD
     subgraph EdgeAMR1["AMR-01 (Edge Node)"]
-        DIS1["DistributedIntentStore\n(Local Safe Intervals)"]
-        SIPP1["SIPP Local Planner\n(Time-Space Reservations)"]
-        ROW1["Right-of-Way Resolver\n(Deterministic Scoring)"]
-        BUMP1["Virtual Safety Bumper\n(2.0m Proximity Envelope)"]
-        KIN1["Differential Drive Kinematics\n(Max 1.4 m/s)"]
+        DIS1["DistributedIntentStore<br/>(Local Safe Intervals)"]
+        SIPP1["SIPP Local Planner<br/>(Time-Space Reservations)"]
+        ROW1["Right-of-Way Resolver<br/>(Deterministic Scoring)"]
+        BUMP1["Virtual Safety Bumper<br/>(2.0m Proximity Envelope)"]
+        KIN1["Differential Drive Kinematics<br/>(Max 1.4 m/s)"]
     end
 
     subgraph EdgeAMR2["AMR-02 (Edge Node)"]
-        DIS2["DistributedIntentStore\n(Local Safe Intervals)"]
-        SIPP2["SIPP Local Planner\n(Time-Space Reservations)"]
-        ROW2["Right-of-Way Resolver\n(Deterministic Scoring)"]
-        BUMP2["Virtual Safety Bumper\n(2.0m Proximity Envelope)"]
-        KIN2["Differential Drive Kinematics\n(Max 1.4 m/s)"]
+        DIS2["DistributedIntentStore<br/>(Local Safe Intervals)"]
+        SIPP2["SIPP Local Planner<br/>(Time-Space Reservations)"]
+        ROW2["Right-of-Way Resolver<br/>(Deterministic Scoring)"]
+        BUMP2["Virtual Safety Bumper<br/>(2.0m Proximity Envelope)"]
+        KIN2["Differential Drive Kinematics<br/>(Max 1.4 m/s)"]
     end
 
     subgraph EdgeAMR3["AMR-03..10 (Edge Nodes)"]
@@ -65,12 +65,12 @@ flowchart TD
 
     subgraph UIThread["WareSync Industrial UI (Main Thread - Passive Observer)"]
         Zustand["useSimulationStore / uiStore"]
-        Scene3D["Three.js / React Three Fiber\n(3D Digital Twin)"]
-        NetScreen["P2P Network Inspector\n(Live Topology Mesh & Packet Stream)"]
-        BenchScreen["Benchmark & Validation Studio\n(Recharts Dual-Run Analytics)"]
+        Scene3D["Three.js / React Three Fiber<br/>(3D Digital Twin)"]
+        NetScreen["P2P Network Inspector<br/>(Live Topology Mesh & Packet Stream)"]
+        BenchScreen["Benchmark & Validation Studio<br/>(Recharts Dual-Run Analytics)"]
     end
 
-    WebWorker ==="PostMessage(SimulationFrame)"===> UIThread
+    SimEng ==>|"PostMessage(SimulationFrame)"| Zustand
 ```
 
 ### Architectural Tenets
