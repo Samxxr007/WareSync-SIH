@@ -267,57 +267,45 @@ export class SimulationEngine {
       });
 
       elev.queueRobotIds = waitingList.map((w) => w.robot.id);
-      const canBoardAny = !elev.occupantRobotId && !isCabInTransit;
+      // C. Boarding & Dispatch logic (when cab is unoccupied and stopped at a floor)
+      if (!elev.occupantRobotId && !isCabInTransit) {
+        // Determine current floor of the cab
+        let currentCabFloorId = 'floor-1';
+        for (const [fId, elevM] of Object.entries(elev.floorElevations)) {
+          if (Math.abs(elevM - elev.currentHeightMeters) <= 0.08) {
+            currentCabFloorId = fId;
+            break;
+          }
+        }
 
-      // C. Per-floor standoff queue management
-      const floorsWithWaiters = Array.from(new Set(waitingList.map((w) => w.robot.floorId)));
-      for (const fId of floorsWithWaiters) {
-        const floorWaiters = waitingList.filter((w) => w.robot.floorId === fId);
-        const pickupHeight = elev.floorElevations[fId] ?? 0;
-        const cabAtThisFloor = Math.abs(elev.currentHeightMeters - pickupHeight) <= 0.08;
+        // 1. First priority: board any robot waiting at the landing of the CURRENT cab floor
+        const currentFloorWaiters = waitingList.filter((w) => w.robot.floorId === currentCabFloorId);
+        const readyToBoard = currentFloorWaiters.find((w) => w.dist <= 2.2);
 
-        for (let idx = 0; idx < floorWaiters.length; idx++) {
-          const item = floorWaiters[idx]!;
-          const isTopCandidate = canBoardAny && idx === 0 && waitingList[0]?.robot.id === item.robot.id;
-
-          if (isTopCandidate) {
-            if (cabAtThisFloor) {
-              if (item.dist <= 1.2) {
-                const boarded = elev.boardRobot(item.robot.id, item.targetFloorId);
-                if (boarded) {
-                  item.robot.position[0] = cabX;
-                  item.robot.position[2] = cabZ;
-                  item.robot.position[1] = elev.currentHeightMeters;
-                  item.robot.speedMps = 0;
-                  item.robot.status = 'WAITING';
-                  this.logEvent(`${item.robot.id} boarded ${elev.id} on ${fId} → heading to ${item.targetFloorId}`, 'ROBOT', 'INFO');
-                }
-              } else {
-                item.robot.status = 'MOVING';
-              }
-            } else {
-              elev.requestElevator(item.robot.id, fId);
-              if (item.dist <= 0.8) {
-                item.robot.status = 'WAITING';
-                item.robot.speedMps = 0;
-                item.robot.position[0] = landingX;
-                item.robot.position[2] = landingZ;
-              } else {
-                item.robot.status = 'MOVING';
-              }
-            }
-          } else {
-            // Standoff queue slots spaced 2.0m apart behind the landing
-            const queueOffset = canBoardAny ? idx : idx + 1;
-            const slotZ = landingZ + queueOffset * 2.0;
-            if (item.dist <= queueOffset * 2.0 + 0.8) {
-              item.robot.status = 'WAITING';
-              item.robot.speedMps = 0;
-              item.robot.position[0] = landingX;
-              item.robot.position[2] = slotZ;
-            } else {
-              item.robot.status = 'MOVING';
-            }
+        if (readyToBoard) {
+          const boarded = elev.boardRobot(readyToBoard.robot.id, readyToBoard.targetFloorId);
+          if (boarded) {
+            readyToBoard.robot.position[0] = cabX;
+            readyToBoard.robot.position[2] = cabZ;
+            readyToBoard.robot.position[1] = elev.currentHeightMeters;
+            readyToBoard.robot.speedMps = 0;
+            readyToBoard.robot.status = 'WAITING';
+            this.logEvent(
+              `${readyToBoard.robot.id} boarded elevator ${elev.id} on ${currentCabFloorId} → heading to ${readyToBoard.targetFloorId}`,
+              'ROBOT',
+              'INFO'
+            );
+          }
+        } else if (waitingList.length > 0) {
+          // 2. No robot ready on current floor: dispatch cab to highest priority waiter's floor
+          const topWaiter = waitingList[0]!;
+          if (topWaiter.robot.floorId !== currentCabFloorId) {
+            elev.requestElevator(topWaiter.robot.id, topWaiter.robot.floorId);
+            this.logEvent(
+              `Elevator ${elev.id} dispatched from ${currentCabFloorId} to ${topWaiter.robot.floorId} for ${topWaiter.robot.id}`,
+              'ROBOT',
+              'INFO'
+            );
           }
         }
       }
@@ -552,14 +540,18 @@ export class SimulationEngine {
           this.logEvent(`${robot.id} deadlock watchdog fired — force-resuming after >8s yield.`, 'ROBOT', 'INFO');
         }
       } else if (robot.status === 'WAITING' && robot.currentTask) {
-        // Release WAITING robots that are not in any elevator queue
-        if (!elevatorQueuedIds.has(robot.id)) {
+        // Only hold WAITING if robot is physically at the elevator transition waiting to board
+        const atElevatorDoor =
+          robot.currentPath[robot.currentPathIndex]?.nodeId.startsWith('elev_node_') &&
+          robot.currentPath[robot.currentPathIndex]?.floorId !== robot.floorId;
+
+        if (!atElevatorDoor) {
           const pathBlocked = robot.currentPath
             .slice(robot.currentPathIndex)
             .some((wp) => blockedNodes.has(wp.nodeId));
           if (!pathBlocked) {
             robot.status = 'MOVING';
-            this.logEvent(`${robot.id} WAITING released (not in elevator queue). Resuming.`, 'ROBOT', 'INFO');
+            this.logEvent(`${robot.id} WAITING released. Resuming trajectory.`, 'ROBOT', 'INFO');
           }
         }
         // Elevator watchdog: robot stuck in queue >20s → replan and force-move
