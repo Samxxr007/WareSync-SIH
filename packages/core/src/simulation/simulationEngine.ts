@@ -393,6 +393,22 @@ export class SimulationEngine {
         }
       }
     }
+
+    // Release yielding robots once conflict zone is clear
+    for (const robot of robotList) {
+      if (robot.status === 'YIELDING') {
+        const stillInConflict = robotList.some(
+          (other) =>
+            other.id !== robot.id &&
+            other.floorId === robot.floorId &&
+            Math.hypot(robot.position[0] - other.position[0], robot.position[2] - other.position[2]) < 2.5
+        );
+        if (!stillInConflict) {
+          robot.status = 'MOVING';
+          this.logEvent(`${robot.id} conflict cleared. Resuming trajectory.`, 'ROBOT', 'INFO');
+        }
+      }
+    }
   }
 
   private findNearestNodeId(pos: [number, number, number], floorId: string): string {

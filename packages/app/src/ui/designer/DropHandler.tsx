@@ -34,8 +34,8 @@ export const DropHandler: React.FC<DropHandlerProps> = ({
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
       if (!onHover) return;
-      const snapped = snapPoint3D({ x: e.point.x, y: floorY, z: e.point.z }, gridSize);
-      onHover(snapped);
+      const snapped = snapPoint3D([e.point.x, floorY, e.point.z], gridSize);
+      onHover({ x: snapped[0], y: snapped[1], z: snapped[2] });
     },
     [gridSize, floorY, onHover],
   );
@@ -43,8 +43,8 @@ export const DropHandler: React.FC<DropHandlerProps> = ({
   const handlePointerUp = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
-      const snapped = snapPoint3D({ x: e.point.x, y: floorY, z: e.point.z }, gridSize);
-      onDrop(snapped);
+      const snapped = snapPoint3D([e.point.x, floorY, e.point.z], gridSize);
+      onDrop({ x: snapped[0], y: snapped[1], z: snapped[2] });
     },
     [gridSize, floorY, onDrop],
   );

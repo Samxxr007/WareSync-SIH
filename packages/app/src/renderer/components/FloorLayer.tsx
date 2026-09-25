@@ -200,7 +200,82 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
           );
         }
 
-        return null;
+        if (obj.type === 'forklift') {
+          const isSelected = selectedObjectId === obj.id;
+          return (
+            <group key={obj.id} position={obj.position} onClick={(e) => { e.stopPropagation(); onSelectObject && onSelectObject(obj.id); }}>
+              {/* Forklift chassis */}
+              <mesh position={[0, 0.4, 0]}>
+                <boxGeometry args={[1.2, 0.6, 2.0]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#E5A910'} metalness={0.4} roughness={0.5} />
+              </mesh>
+              {/* Cab cage */}
+              <mesh position={[0, 1.2, -0.2]}>
+                <boxGeometry args={[1.0, 1.0, 1.1]} />
+                <meshStandardMaterial color="#2B3238" transparent opacity={0.6} />
+              </mesh>
+              {/* Mast & Forks */}
+              <mesh position={[0, 1.1, 1.05]}>
+                <boxGeometry args={[0.7, 1.8, 0.08]} />
+                <meshStandardMaterial color="#4A5560" />
+              </mesh>
+              <mesh position={[0, 0.08, 1.45]}>
+                <boxGeometry args={[0.6, 0.06, 0.8]} />
+                <meshStandardMaterial color="#2B3238" />
+              </mesh>
+            </group>
+          );
+        }
+
+        if (obj.type === 'human') {
+          const isSelected = selectedObjectId === obj.id;
+          return (
+            <group key={obj.id} position={obj.position} onClick={(e) => { e.stopPropagation(); onSelectObject && onSelectObject(obj.id); }}>
+              {/* High-visibility vest torso */}
+              <mesh position={[0, 1.05, 0]}>
+                <boxGeometry args={[0.45, 0.55, 0.28]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#FF7A00'} />
+              </mesh>
+              {/* Head with safety helmet */}
+              <mesh position={[0, 1.55, 0]}>
+                <sphereGeometry args={[0.18, 16, 16]} />
+                <meshStandardMaterial color="#F4B400" />
+              </mesh>
+              {/* Legs */}
+              <mesh position={[-0.12, 0.4, 0]}>
+                <boxGeometry args={[0.16, 0.75, 0.2]} />
+                <meshStandardMaterial color="#2B3A4A" />
+              </mesh>
+              <mesh position={[0.12, 0.4, 0]}>
+                <boxGeometry args={[0.16, 0.75, 0.2]} />
+                <meshStandardMaterial color="#2B3A4A" />
+              </mesh>
+            </group>
+          );
+        }
+
+        if (obj.type === 'aisle') {
+          return (
+            <group key={obj.id} position={obj.position}>
+              <mesh position={[0, 0.01, 0]}>
+                <planeGeometry args={[obj.dimensions?.[0] || 3, obj.dimensions?.[2] || 6]} />
+                <meshBasicMaterial color="#E2E7EC" transparent opacity={0.6} />
+              </mesh>
+            </group>
+          );
+        }
+
+        // Generic visible industrial module for any other custom component
+        const isSelected = selectedObjectId === obj.id;
+        const dims = (obj as any).dimensions || [1.5, 1.0, 1.5];
+        return (
+          <group key={obj.id} position={obj.position} onClick={(e) => { e.stopPropagation(); onSelectObject && onSelectObject(obj.id); }}>
+            <mesh position={[0, dims[1] / 2, 0]}>
+              <boxGeometry args={dims} />
+              <meshStandardMaterial color={isSelected ? colors.primary : '#7A8894'} roughness={0.6} />
+            </mesh>
+          </group>
+        );
       })}
 
     </group>

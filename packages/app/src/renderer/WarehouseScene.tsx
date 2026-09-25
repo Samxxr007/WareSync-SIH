@@ -75,8 +75,8 @@ export const WarehouseScene: React.FC = () => {
     const hit = manualRaycaster.ray.intersectPlane(plane, target);
 
     if (hit) {
-      const snapped = snapPoint3D({ x: target.x, y: floorElevation, z: target.z }, 0.5);
-      setGhostPosition([snapped.x, floorElevation, snapped.z]);
+      const snapped = snapPoint3D([target.x, floorElevation, target.z], 0.5);
+      setGhostPosition([snapped[0], floorElevation, snapped[2]]);
       setDragPosition({ x: e.clientX, y: e.clientY });
     }
   };

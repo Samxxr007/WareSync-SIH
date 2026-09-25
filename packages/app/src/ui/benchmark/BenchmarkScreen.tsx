@@ -18,9 +18,9 @@ const BENCHMARK_STEPS = 300;
 
 export const BenchmarkScreen: React.FC = () => {
   const { model } = useWarehouseStore();
-  const { status, result, runDurationMs, setStatus, setResult, setError, reset } =
+  const { status, result, runDurationMs, errorMessage, setStatus, setResult, setError, reset } =
     useComparisonStore();
-  const { setMode } = useSimulationStore();
+  const { initSimulation, play } = useSimulationStore();
 
   const workerRef = useRef<Worker | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -87,7 +87,10 @@ export const BenchmarkScreen: React.FC = () => {
     setProgress(0);
   };
 
-  const openSideBySide = () => setMode('comparison');
+  const openSideBySide = () => {
+    initSimulation(model, 'SIDE_BY_SIDE');
+    play();
+  };
 
   return (
     <div
@@ -145,6 +148,23 @@ export const BenchmarkScreen: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Error state */}
+      {status === 'error' && (
+        <div
+          style={{
+            padding: '12px 16px',
+            background: '#FFF5F5',
+            border: `1px solid ${colors.critical}`,
+            borderRadius: '4px',
+            marginBottom: '20px',
+            fontSize: '12px',
+            color: colors.critical,
+          }}
+        >
+          <strong>Benchmark Run Notice:</strong> {errorMessage || 'An issue occurred during worker execution.'}
+        </div>
+      )}
 
       {/* Progress bar */}
       {status === 'running' && (

@@ -43,18 +43,18 @@ export const ComparisonCharts: React.FC<ComparisonChartsProps> = ({ result }) =>
     },
     {
       name: 'Conflicts',
-      Baseline: b.conflictsDetected,
-      Proposed: p.conflictsDetected,
+      Baseline: b.collisions ?? b.activeConflicts ?? 0,
+      Proposed: p.collisions ?? p.activeConflicts ?? 0,
     },
     {
       name: 'Deadlocks',
-      Baseline: b.deadlocksResolved,
-      Proposed: p.deadlocksResolved,
+      Baseline: b.deadlocksResolved ?? 0,
+      Proposed: p.deadlocksResolved ?? 0,
     },
     {
-      name: 'Energy (Wh)',
-      Baseline: +b.energyConsumedWh.toFixed(1),
-      Proposed: +p.energyConsumedWh.toFixed(1),
+      name: 'Reroutes',
+      Baseline: b.totalReroutes ?? 0,
+      Proposed: p.totalReroutes ?? 0,
     },
   ];
 
@@ -103,7 +103,7 @@ export const ComparisonCharts: React.FC<ComparisonChartsProps> = ({ result }) =>
             />
             <Tooltip
               contentStyle={{ fontSize: '11px', fontFamily: 'Inter', border: '1px solid #D5DADE' }}
-              formatter={(v: number) => [`${v}%`, 'Improvement']}
+              formatter={(v: any) => [`${v}%`, 'Improvement']}
             />
             <Bar
               dataKey="improvement"

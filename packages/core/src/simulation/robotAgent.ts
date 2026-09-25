@@ -179,6 +179,13 @@ export class RobotAgent {
     if (this.currentPath.length > 0 && this.currentPathIndex < this.currentPath.length) {
       const targetWaypoint = this.currentPath[this.currentPathIndex]!;
 
+      // If yielding in PROPOSED mode, pause speed to give proceeding AMR right-of-way
+      if (this.status === 'YIELDING') {
+        this.speedMps = 0;
+        this.waitTimeSec += dtSec;
+        return;
+      }
+
       // In BASELINE mode: check stop-and-wait lock
       if (mode === 'BASELINE') {
         const canEnter = stopAndWaitCoordinator.tryAcquireNode(

@@ -6,15 +6,17 @@
  */
 import React from 'react';
 import { SideBySideScene } from '../../renderer/SideBySideScene';
+import { useWarehouseStore } from '../../store/warehouseStore';
 import { useComparisonStore } from '../../store/comparisonStore';
 import { useSimulationStore } from '../../store/simulationStore';
 import { colors } from '../../design-system/tokens';
 
 export const SideBySideSimulation: React.FC = () => {
   const { status, result, runDurationMs } = useComparisonStore();
-  const { mode } = useSimulationStore();
+  const { model } = useWarehouseStore();
+  const { mode, initSimulation, play } = useSimulationStore();
 
-  const showScene = mode === 'comparison';
+  const showScene = mode === 'SIDE_BY_SIDE';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -92,16 +94,35 @@ export const SideBySideSimulation: React.FC = () => {
           <div
             style={{
               display: 'flex',
+              flexDirection: 'column',
               height: '100%',
               alignItems: 'center',
               justifyContent: 'center',
               color: colors.textMuted,
               fontSize: '12px',
               fontFamily: 'Inter, sans-serif',
+              gap: '12px',
             }}
           >
-            Switch to <strong style={{ margin: '0 4px' }}>Side-by-Side</strong> mode in
-            the simulation controls to view the dual-canvas comparison.
+            <div>Live dual-canvas comparison ready.</div>
+            <button
+              onClick={() => {
+                initSimulation(model, 'SIDE_BY_SIDE');
+                play();
+              }}
+              style={{
+                backgroundColor: colors.primary,
+                color: '#FFF',
+                border: 'none',
+                borderRadius: '3px',
+                padding: '8px 16px',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              ▶ Start Live Side-by-Side View
+            </button>
           </div>
         )}
       </div>
