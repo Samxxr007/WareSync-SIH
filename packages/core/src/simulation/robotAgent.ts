@@ -222,8 +222,9 @@ export class RobotAgent {
         const moveStep = Math.min(dist, this.speedMps * dtSec);
         this.position[0] += (dx / dist) * moveStep;
         this.position[2] += (dz / dist) * moveStep;
-        this.position[1] = targetPos[1]; // Elevation
-        this.floorId = targetWaypoint.floorId;
+        if (targetWaypoint.floorId === this.floorId) {
+          this.position[1] = targetPos[1]; // Elevation
+        }
       } else {
         // If this waypoint is an elevator transition to a different floor, do NOT advance!
         // The simulation engine elevator orchestrator will advance the robot once the elevator cab reaches destination.

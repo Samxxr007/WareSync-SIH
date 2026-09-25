@@ -102,9 +102,9 @@ export function compileWarehouse(model: WarehouseModel): CompilationResult {
         const nodeId = `node_${floor.id}_${Math.round(x)}_${Math.round(z)}`;
         const pos: Vec3 = [x, floorY, z];
 
-        // Check if inside any obstacle, temporary blockage, or rack body
+        // Check if inside any obstacle, temporary blockage, rack body, or elevator shaft
         const isBlocked = floor.objects.some((obj) => {
-          if (obj.type !== 'obstacle' && obj.type !== 'temporary_blockage' && obj.type !== 'rack') return false;
+          if (obj.type !== 'obstacle' && obj.type !== 'temporary_blockage' && obj.type !== 'rack' && obj.type !== 'elevator') return false;
           const [ox, , oz] = obj.position;
           const [dx, , dz] = obj.dimensions;
           return Math.abs(x - ox) < (dx / 2) + 0.2 && Math.abs(z - oz) < (dz / 2) + 0.2;
@@ -212,12 +212,12 @@ export function compileWarehouse(model: WarehouseModel): CompilationResult {
           travelSpeedMps: (obj as any).travelSpeedMps || 1.2,
         });
 
-        // Add elevator entry node on this floor
+        // Add elevator entry node on this floor — positioned 2.5m in front of the door (along +Z)
         const elevNodeId = `elev_node_${obj.id}_${floor.id}`;
         addNode(navGraph, {
           id: elevNodeId,
           floorId: floor.id,
-          position: [obj.position[0], floorY, obj.position[2]],
+          position: [obj.position[0], floorY, obj.position[2] + 2.5],
           type: 'ELEVATOR_ENTRY',
           associatedObjectId: obj.id,
         });
