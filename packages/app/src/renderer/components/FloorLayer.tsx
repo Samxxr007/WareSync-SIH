@@ -22,9 +22,9 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
   const opacity = isGhosted ? 0.25 : 1.0;
 
   return (
-    <group position={[0, floorY, 0]}>
+    <group>
       {/* Floor Concrete Slab */}
-      <mesh position={[0, -0.05, 0]} receiveShadow>
+      <mesh position={[0, floorY - 0.05, 0]} receiveShadow>
         <boxGeometry args={[dimX, 0.1, dimZ]} />
         <meshStandardMaterial
           color={colors.materialFloor}
@@ -37,7 +37,7 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
       {/* Grid Floor Lines (Engineering grid, 2m interval) */}
       <gridHelper
         args={[dimX, dimX / 2, '#9AA5AE', '#C5CCD1']}
-        position={[0, 0.005, 0]}
+        position={[0, floorY + 0.005, 0]}
       />
 
       {/* Warehouse Objects on this floor */}
@@ -64,22 +64,71 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
                 onSelectObject && onSelectObject(obj.id);
               }}
             >
-              <mesh position={[0, 0.75, 0]}>
-                <boxGeometry args={[1.0, 1.5, 0.8]} />
-                <meshStandardMaterial
-                  color={isSelected ? colors.primary : '#48525A'}
-                />
+              {/* Charging pylon base */}
+              <mesh position={[0, 0.1, 0]}>
+                <cylinderGeometry args={[0.35, 0.45, 0.2, 8]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#2B3238'} />
               </mesh>
-              {/* Charging Cable / Pad indicator */}
-              <mesh position={[0, 0.02, 0.8]}>
-                <cylinderGeometry args={[0.3, 0.3, 0.04, 16]} />
+              {/* Charging pylon pole */}
+              <mesh position={[0, 0.8, 0]}>
+                <cylinderGeometry args={[0.1, 0.1, 1.2, 8]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#3A4550'} metalness={0.6} roughness={0.4} />
+              </mesh>
+              {/* Charging head box */}
+              <mesh position={[0, 1.55, 0]}>
+                <boxGeometry args={[0.55, 0.55, 0.3]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#1D6FA4'} />
+              </mesh>
+              {/* Charging indicator LED */}
+              <mesh position={[0, 1.55, 0.16]}>
+                <cylinderGeometry args={[0.06, 0.06, 0.04, 12]} />
                 <meshBasicMaterial color={colors.info} />
+              </mesh>
+              {/* Cable/plug dangling */}
+              <mesh position={[0.3, 1.1, 0]} rotation={[0, 0, Math.PI / 4]}>
+                <cylinderGeometry args={[0.025, 0.025, 0.8, 8]} />
+                <meshStandardMaterial color="#1A1E22" />
               </mesh>
             </group>
           );
         }
 
-        if (obj.type === 'loading_dock' || obj.type === 'packing_station') {
+        if (obj.type === 'elevator') {
+          const isSelected = selectedObjectId === obj.id;
+          // Static elevator shaft marker on floor (the moving cab is rendered by ElevatorMesh via simulation state)
+          return (
+            <group
+              key={`static_${obj.id}_${obj.floorId}`}
+              position={obj.position}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectObject && onSelectObject(obj.id);
+              }}
+            >
+              {/* Shaft floor marker — yellow hazard stripes */}
+              <mesh position={[0, 0.01, 0]}>
+                <boxGeometry args={[3.2, 0.02, 3.2]} />
+                <meshBasicMaterial color={isSelected ? colors.primary : '#C88900'} transparent opacity={0.55} />
+              </mesh>
+              {/* Corner bollards */}
+              {([-1.3, 1.3] as number[]).map((x) =>
+                ([-1.3, 1.3] as number[]).map((z) => (
+                  <mesh key={`bollard_${x}_${z}`} position={[x, 0.25, z]}>
+                    <cylinderGeometry args={[0.06, 0.06, 0.5, 8]} />
+                    <meshStandardMaterial color="#F5A623" />
+                  </mesh>
+                ))
+              )}
+              {/* ELEV label plate */}
+              <mesh position={[0, 0.05, 1.6]}>
+                <boxGeometry args={[1.0, 0.04, 0.4]} />
+                <meshBasicMaterial color={isSelected ? colors.primary : '#C88900'} />
+              </mesh>
+            </group>
+          );
+        }
+
+        if (obj.type === 'loading_dock') {
           const isSelected = selectedObjectId === obj.id;
           return (
             <group
@@ -90,16 +139,70 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
                 onSelectObject && onSelectObject(obj.id);
               }}
             >
-              <mesh position={[0, 0.5, 0]}>
-                <boxGeometry args={obj.dimensions} />
-                <meshStandardMaterial
-                  color={isSelected ? colors.primary : '#6B757F'}
-                />
+              {/* Dock platform */}
+              <mesh position={[0, 0.3, 0]}>
+                <boxGeometry args={[obj.dimensions[0], 0.6, obj.dimensions[2]]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#4A5560'} roughness={0.7} />
               </mesh>
-              {/* Station outline */}
-              <mesh position={[0, 0.01, 0]}>
-                <planeGeometry args={[obj.dimensions[0] + 0.4, obj.dimensions[2] + 0.4]} />
-                <meshBasicMaterial color="#A4ADB5" transparent opacity={0.3} />
+              {/* Dock bumper strips (yellow) */}
+              <mesh position={[0, 0.62, 0]}>
+                <boxGeometry args={[obj.dimensions[0] + 0.1, 0.04, obj.dimensions[2] + 0.1]} />
+                <meshBasicMaterial color="#C88900" />
+              </mesh>
+              {/* Dock door frame */}
+              <mesh position={[0, 1.2, -obj.dimensions[2] / 2]}>
+                <boxGeometry args={[obj.dimensions[0] * 0.8, 1.8, 0.1]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#3A4148'} />
+              </mesh>
+            </group>
+          );
+        }
+
+        if (obj.type === 'packing_station') {
+          const isSelected = selectedObjectId === obj.id;
+          return (
+            <group
+              key={obj.id}
+              position={obj.position}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectObject && onSelectObject(obj.id);
+              }}
+            >
+              {/* Station work surface */}
+              <mesh position={[0, 0.5, 0]}>
+                <boxGeometry args={[obj.dimensions[0], 1.0, obj.dimensions[2]]} />
+                <meshStandardMaterial color={isSelected ? colors.primary : '#5A6874'} roughness={0.6} />
+              </mesh>
+              {/* Station label strip (green) */}
+              <mesh position={[0, 1.02, 0]}>
+                <boxGeometry args={[obj.dimensions[0], 0.04, obj.dimensions[2]]} />
+                <meshBasicMaterial color={isSelected ? colors.primary : colors.success} />
+              </mesh>
+              {/* Conveyor rollers */}
+              {[-0.5, 0, 0.5].map((x) => (
+                <mesh key={`roller_${x}`} position={[x, 1.08, 0]} rotation={[0, 0, Math.PI / 2]}>
+                  <cylinderGeometry args={[0.06, 0.06, obj.dimensions[2] * 0.8, 8]} />
+                  <meshStandardMaterial color="#8A949C" metalness={0.5} />
+                </mesh>
+              ))}
+            </group>
+          );
+        }
+
+        if (obj.type === 'obstacle') {
+          const isSelected = selectedObjectId === obj.id;
+          return (
+            <group key={obj.id} position={obj.position}>
+              {/* Obstacle base with warning coloring */}
+              <mesh position={[0, obj.dimensions[1] / 2, 0]}>
+                <boxGeometry args={obj.dimensions} />
+                <meshStandardMaterial color={isSelected ? colors.primary : colors.critical} roughness={0.7} transparent opacity={0.75} />
+              </mesh>
+              {/* Warning stripes on top */}
+              <mesh position={[0, obj.dimensions[1] + 0.01, 0]}>
+                <boxGeometry args={[obj.dimensions[0], 0.02, obj.dimensions[2]]} />
+                <meshBasicMaterial color="#F5A623" />
               </mesh>
             </group>
           );
@@ -107,6 +210,7 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
 
         return null;
       })}
+
     </group>
   );
 };

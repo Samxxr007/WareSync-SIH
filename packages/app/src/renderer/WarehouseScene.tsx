@@ -19,14 +19,15 @@ import { buildDefaultObject } from '../ui/designer/defaultObjects';
 import { colors } from '../design-system/tokens';
 
 const SceneRaycasterBridge: React.FC<{
-  onUpdate: (state: { camera: THREE.Camera; raycaster: THREE.Raycaster }) => void;
+  onUpdate: (state: { camera: THREE.Camera }) => void;
 }> = ({ onUpdate }) => {
-  const { camera, raycaster } = useThree();
+  const { camera } = useThree();
   useEffect(() => {
-    onUpdate({ camera, raycaster });
-  }, [camera, raycaster, onUpdate]);
+    onUpdate({ camera });
+  }, [camera, onUpdate]);
   return null;
 };
+
 
 export const WarehouseScene: React.FC = () => {
   const { model, activeFloorId, setActiveFloorId, addObject } = useWarehouseStore();
@@ -47,12 +48,12 @@ export const WarehouseScene: React.FC = () => {
   const [ghostPosition, setGhostPosition] = useState<[number, number, number] | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const bridgeRef = useRef<{ camera: THREE.Camera; raycaster: THREE.Raycaster } | null>(null);
+  const bridgeRef = useRef<{ camera: THREE.Camera } | null>(null);
 
   const activeFloor = model.floors.find((f) => f.id === activeFloorId) || model.floors[0];
   const floorElevation = activeFloor?.elevationMeters || 0;
 
-  const handleBridgeUpdate = useCallback((state: { camera: THREE.Camera; raycaster: THREE.Raycaster }) => {
+  const handleBridgeUpdate = useCallback((state: { camera: THREE.Camera }) => {
     bridgeRef.current = state;
   }, []);
 
@@ -65,12 +66,13 @@ export const WarehouseScene: React.FC = () => {
     const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
-    const { camera, raycaster } = bridgeRef.current;
-    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    // Use a fresh standalone raycaster — R3F's managed one doesn't work during HTML5 drag events
+    const manualRaycaster = new THREE.Raycaster();
+    manualRaycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), bridgeRef.current.camera);
 
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -floorElevation);
     const target = new THREE.Vector3();
-    const hit = raycaster.ray.intersectPlane(plane, target);
+    const hit = manualRaycaster.ray.intersectPlane(plane, target);
 
     if (hit) {
       const snapped = snapPoint3D({ x: target.x, y: floorElevation, z: target.z }, 0.5);
@@ -78,6 +80,7 @@ export const WarehouseScene: React.FC = () => {
       setDragPosition({ x: e.clientX, y: e.clientY });
     }
   };
+
 
   const handleDragLeave = () => {
     setGhostPosition(null);

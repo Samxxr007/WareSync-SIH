@@ -124,7 +124,43 @@ export class SimulationEngine {
       );
     }
 
-    // 4. Update Elevators
+    // 4. Elevator orchestration: detect robots at elevator nodes and board them
+    for (const robot of this.robots.values()) {
+      const currentNodeId = robot.currentPath[robot.currentPathIndex]?.nodeId || '';
+      if (currentNodeId.startsWith('elev_node_')) {
+        // Parse: elev_node_ELEV-01_floor-X
+        const parts = currentNodeId.split('_');
+        // parts = ['elev', 'node', 'ELEV', '01', 'floor', 'X']
+        // elevatorId is between 'node_' and last two segments
+        // format: elev_node_{elevId}_{floorId} where elevId = 'ELEV-01', floorId = 'floor-1'
+        const afterPrefix = currentNodeId.substring('elev_node_'.length); // 'ELEV-01_floor-1'
+        const lastUnderscoreIdx = afterPrefix.lastIndexOf('_floor-');
+        const elevId = lastUnderscoreIdx >= 0 ? afterPrefix.substring(0, lastUnderscoreIdx) : 'ELEV-01';
+
+        const elev = this.elevators.get(elevId);
+        if (elev) {
+          // Determine destination floor from next elevator node in path
+          const nextElevIdx = robot.currentPath.findIndex(
+            (step, idx) => idx > robot.currentPathIndex && step.nodeId.startsWith('elev_node_') && step.floorId !== robot.floorId
+          );
+          const destFloorId = nextElevIdx >= 0
+            ? robot.currentPath[nextElevIdx]!.floorId
+            : robot.floorId;
+
+          elev.requestElevator(robot.id, destFloorId);
+          const boarded = elev.boardRobot(robot.id, destFloorId);
+          if (boarded) {
+            this.logEvent(
+              `${robot.id} boarded elevator ${elevId} → ${destFloorId}`,
+              'ROBOT',
+              'INFO'
+            );
+          }
+        }
+      }
+    }
+
+    // Update Elevators
     for (const elev of this.elevators.values()) {
       elev.update(dt);
     }
@@ -139,7 +175,43 @@ export class SimulationEngine {
   }
 
   private dispatchPendingTasks(blockedNodes: Set<string>): void {
-    if (this.pendingTasks.length === 0) return;
+    // If queue is empty AND all robots are idle, recycle tasks to keep fleet busy
+    if (this.pendingTasks.length === 0) {
+      const anyActive = Array.from(this.robots.values()).some(
+        (r) => r.status === 'MOVING' || r.status === 'WAITING' || r.status === 'YIELDING' || r.currentTask
+      );
+      if (!anyActive && this.simTimeSec > 5) {
+        // Recycle: generate new tasks from all racks
+        const racks = ['R12', 'R17', 'R14', 'R03'];
+        const stations = ['PACK-01', 'PACK-02', 'DOCK-01', 'DOCK-02'];
+        const pickupFloors: Record<string, string> = { R12: 'floor-2', R17: 'floor-2', R14: 'floor-2', R03: 'floor-3' };
+        const skus = ['SKU-A', 'SKU-B', 'SKU-C'];
+        const prios: Array<'NORMAL' | 'HIGH' | 'CRITICAL'> = ['NORMAL', 'HIGH', 'CRITICAL'];
+        const recycled: any[] = [];
+        for (let i = 0; i < 6; i++) {
+          const rack = racks[i % racks.length]!;
+          const station = stations[i % stations.length]!;
+          const isF1Station = true;
+          recycled.push({
+            id: `R${Math.floor(2000 + Math.random() * 8000)}`,
+            sku: skus[i % skus.length]!,
+            quantity: 5 + Math.floor(Math.random() * 20),
+            pickupRackId: rack,
+            pickupFloorId: pickupFloors[rack]!,
+            pickupLevel: 1 + Math.floor(Math.random() * 3),
+            dropStationId: station,
+            dropFloorId: 'floor-1',
+            weightKg: 10 + Math.random() * 60,
+            priority: prios[i % prios.length]!,
+            status: 'PENDING' as const,
+            createdTimeSec: this.simTimeSec,
+          });
+        }
+        this.pendingTasks.push(...recycled);
+        this.logEvent(`Task queue recycled: ${recycled.length} new tasks generated for continuous fleet operation.`, 'TASK', 'INFO');
+      }
+      return;
+    }
 
     const idleRobots = Array.from(this.robots.values())
       .filter((r) => r.status === 'IDLE' && !r.currentTask)
@@ -218,7 +290,7 @@ export class SimulationEngine {
         const dist = Math.sqrt(dx * dx + dz * dz);
 
         // Near-proximity conflict
-        if (dist < 2.0 && robotA.status === 'MOVING' && robotB.status === 'MOVING') {
+        if (dist < 3.5 && robotA.status === 'MOVING' && robotB.status === 'MOVING') {
           this.metricsCollector.recordConflict();
 
           const conflict: ConflictEvent = {
