@@ -124,44 +124,97 @@ export class SimulationEngine {
       );
     }
 
-    // 4. Elevator orchestration: detect robots at elevator nodes and board them
-    for (const robot of this.robots.values()) {
-      const currentNodeId = robot.currentPath[robot.currentPathIndex]?.nodeId || '';
-      if (currentNodeId.startsWith('elev_node_')) {
-        // Parse: elev_node_ELEV-01_floor-X
-        const parts = currentNodeId.split('_');
-        // parts = ['elev', 'node', 'ELEV', '01', 'floor', 'X']
-        // elevatorId is between 'node_' and last two segments
-        // format: elev_node_{elevId}_{floorId} where elevId = 'ELEV-01', floorId = 'floor-1'
-        const afterPrefix = currentNodeId.substring('elev_node_'.length); // 'ELEV-01_floor-1'
-        const lastUnderscoreIdx = afterPrefix.lastIndexOf('_floor-');
-        const elevId = lastUnderscoreIdx >= 0 ? afterPrefix.substring(0, lastUnderscoreIdx) : 'ELEV-01';
+    // 4. Elevator orchestration: handle calling, boarding, vertical transit, and disembarking
+    for (const elev of this.elevators.values()) {
+      // Determine world X, Z coordinates for this elevator shaft
+      const conn = this.warehouseModel.connections.find((c) => c.id === elev.id);
+      const elevPos = conn?.entryNodesByFloor['floor-1'] || [0, 0, 0];
+      const elevX = elevPos[0];
+      const elevZ = elevPos[2];
 
-        const elev = this.elevators.get(elevId);
-        if (elev) {
-          // Determine destination floor from next elevator node in path
-          const nextElevIdx = robot.currentPath.findIndex(
-            (step, idx) => idx > robot.currentPathIndex && step.nodeId.startsWith('elev_node_') && step.floorId !== robot.floorId
-          );
-          const destFloorId = nextElevIdx >= 0
-            ? robot.currentPath[nextElevIdx]!.floorId
-            : robot.floorId;
+      if (elev.occupantRobotId) {
+        // Robot is currently riding inside the elevator cab
+        const occupant = this.robots.get(elev.occupantRobotId);
+        if (occupant) {
+          // Lock robot position inside the cab at the elevator's current animated height
+          occupant.position[0] = elevX;
+          occupant.position[2] = elevZ;
+          occupant.position[1] = elev.currentHeightMeters;
+          occupant.speedMps = 0;
+          occupant.status = 'MOVING';
 
-          elev.requestElevator(robot.id, destFloorId);
-          const boarded = elev.boardRobot(robot.id, destFloorId);
-          if (boarded) {
+          // Check if elevator arrived at destination height
+          if (Math.abs(elev.currentHeightMeters - elev.targetHeightMeters) <= 0.08) {
+            // Find destination floor corresponding to target height
+            let destFloorId = occupant.floorId;
+            for (const [fId, elevM] of Object.entries(elev.floorElevations)) {
+              if (Math.abs(elevM - elev.targetHeightMeters) <= 0.08) {
+                destFloorId = fId;
+                break;
+              }
+            }
+
+            occupant.floorId = destFloorId;
+            occupant.position[1] = elev.targetHeightMeters;
+            occupant.currentPathIndex++;
+            elev.exitRobot(occupant.id);
+
             this.logEvent(
-              `${robot.id} boarded elevator ${elevId} → ${destFloorId}`,
+              `Elevator ${elev.id} delivered ${occupant.id} to ${destFloorId}. Resuming navigation.`,
               'ROBOT',
               'INFO'
             );
           }
         }
-      }
-    }
+      } else {
+        // Elevator is empty: look for robots waiting to use this elevator
+        let waitingRobot: RobotAgent | null = null;
+        let waitingDestFloorId = '';
 
-    // Update Elevators
-    for (const elev of this.elevators.values()) {
+        for (const robot of this.robots.values()) {
+          if (robot.currentPath.length > 0 && robot.currentPathIndex < robot.currentPath.length) {
+            const targetWaypoint = robot.currentPath[robot.currentPathIndex];
+            if (
+              targetWaypoint &&
+              targetWaypoint.nodeId.startsWith(`elev_node_${elev.id}`) &&
+              targetWaypoint.floorId !== robot.floorId
+            ) {
+              // Robot is at elevator landing wanting to go to targetWaypoint.floorId
+              waitingRobot = robot;
+              waitingDestFloorId = targetWaypoint.floorId;
+              break;
+            }
+          }
+        }
+
+        if (waitingRobot && waitingDestFloorId) {
+          const pickupFloorId = waitingRobot.floorId;
+          const pickupHeight = elev.floorElevations[pickupFloorId] ?? 0;
+
+          if (Math.abs(elev.currentHeightMeters - pickupHeight) <= 0.08) {
+            // Elevator is already at the robot's pickup floor: board immediately!
+            const boarded = elev.boardRobot(waitingRobot.id, waitingDestFloorId);
+            if (boarded) {
+              waitingRobot.position[0] = elevX;
+              waitingRobot.position[2] = elevZ;
+              waitingRobot.position[1] = elev.currentHeightMeters;
+              waitingRobot.speedMps = 0;
+              this.logEvent(
+                `${waitingRobot.id} boarded elevator ${elev.id} on ${pickupFloorId} → heading to ${waitingDestFloorId}`,
+                'ROBOT',
+                'INFO'
+              );
+            }
+          } else {
+            // Call elevator to the robot's pickup floor
+            elev.requestElevator(waitingRobot.id, pickupFloorId);
+            waitingRobot.status = 'WAITING';
+            waitingRobot.speedMps = 0;
+          }
+        }
+      }
+
+      // Advance elevator cab physics
       elev.update(dt);
     }
 

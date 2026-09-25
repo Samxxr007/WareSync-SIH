@@ -25,11 +25,35 @@ interface WarehouseStore {
 
 const STORAGE_KEY = 'waresync_warehouse_model_v1';
 
+function sanitizeModel(model: WarehouseModel): { model: WarehouseModel; cleaned: boolean } {
+  let cleaned = false;
+  for (const floor of model.floors) {
+    floor.objects = floor.objects.filter((obj) => {
+      if (obj.type !== 'elevator') {
+        const [x, , z] = obj.position;
+        // Elevator shaft is at [0, 0] with width/depth 3m. Remove any stray objects inside elevator shaft
+        if (Math.abs(x) < 1.5 && Math.abs(z) < 1.5) {
+          console.warn(`[WareSync] Purged stray object ${obj.id} (${obj.type}) from inside elevator shaft.`);
+          cleaned = true;
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+  return { model, cleaned };
+}
+
 function getInitialModel(): WarehouseModel {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
-      return JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      const { model, cleaned } = sanitizeModel(parsed);
+      if (cleaned) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(model));
+      }
+      return model;
     }
   } catch (e) {
     console.error('Failed to load from storage, using demo model', e);
@@ -45,6 +69,13 @@ export const useWarehouseStore = create<WarehouseStore>((set) => ({
 
   addObject: (floorId, obj) =>
     set((state) => {
+      // Prevent placing objects directly inside the central elevator shaft at [0, 0]
+      if (obj.type !== 'elevator') {
+        const [x, y, z] = obj.position;
+        if (Math.abs(x) < 1.5 && Math.abs(z) < 1.5) {
+          obj.position = [-6, y, 4];
+        }
+      }
       const next = addObjectToModel(state.model, floorId, obj);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));

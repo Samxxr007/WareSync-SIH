@@ -39,7 +39,9 @@ export const LeftToolbox: React.FC = () => {
   };
 
   const handleAddItem = (type: string) => {
-    const newObj = buildDefaultObject(type, activeFloorId, [0, 0, 0]);
+    // Avoid placing at [0, 0, 0] which is where the freight elevator shaft is located
+    const spawnPos: [number, number, number] = [-6, 0, 4];
+    const newObj = buildDefaultObject(type, activeFloorId, spawnPos);
     addObject(activeFloorId, newObj);
     setSelectedObjectId(newObj.id);
   };

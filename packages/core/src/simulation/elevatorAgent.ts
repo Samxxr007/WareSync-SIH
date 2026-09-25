@@ -6,13 +6,12 @@ export class ElevatorAgent {
   public readonly floorElevations: Record<string, number>;
   public readonly travelSpeedMps: number;
 
-  private currentFloorIndex = 0;
-  private currentHeightMeters = 0;
-  private targetHeightMeters = 0;
-  private doorState: 'CLOSED' | 'OPENING' | 'OPEN' | 'CLOSING' = 'CLOSED';
-  private doorTimerSec = 0;
-  private occupantRobotId?: string | undefined;
-  private queueRobotIds: string[] = [];
+  public currentHeightMeters = 0;
+  public targetHeightMeters = 0;
+  public doorState: 'CLOSED' | 'OPENING' | 'OPEN' | 'CLOSING' = 'CLOSED';
+  public doorTimerSec = 0;
+  public occupantRobotId?: string | undefined;
+  public queueRobotIds: string[] = [];
 
   constructor(
     id: string,
@@ -34,13 +33,18 @@ export class ElevatorAgent {
     if (!this.queueRobotIds.includes(robotId) && this.occupantRobotId !== robotId) {
       this.queueRobotIds.push(robotId);
     }
+    // If elevator has no occupant, dispatch it towards the calling floor
+    if (!this.occupantRobotId) {
+      this.targetHeightMeters = this.floorElevations[targetFloorId] ?? this.currentHeightMeters;
+    }
   }
 
   public boardRobot(robotId: string, destinationFloorId: string): boolean {
-    if (!this.occupantRobotId && (this.queueRobotIds[0] === robotId || this.queueRobotIds.length === 0)) {
+    if (!this.occupantRobotId) {
       this.occupantRobotId = robotId;
       this.queueRobotIds = this.queueRobotIds.filter((id) => id !== robotId);
       this.targetHeightMeters = this.floorElevations[destinationFloorId] ?? this.currentHeightMeters;
+      this.doorState = 'CLOSED';
       return true;
     }
     return false;
@@ -49,6 +53,7 @@ export class ElevatorAgent {
   public exitRobot(robotId: string): void {
     if (this.occupantRobotId === robotId) {
       this.occupantRobotId = undefined;
+      this.doorState = 'OPEN';
     }
   }
 
@@ -61,11 +66,7 @@ export class ElevatorAgent {
       this.doorState = 'CLOSED';
     } else {
       this.currentHeightMeters = this.targetHeightMeters;
-      // Handle door cycle if stopped at floor
-      if (this.occupantRobotId && this.doorState === 'CLOSED') {
-        this.doorState = 'OPEN';
-        this.doorTimerSec = 2.0;
-      }
+      this.doorState = 'OPEN';
     }
   }
 

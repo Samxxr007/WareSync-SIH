@@ -211,7 +211,14 @@ export class RobotAgent {
         this.position[1] = targetPos[1]; // Elevation
         this.floorId = targetWaypoint.floorId;
       } else {
-        // Arrived at waypoint
+        // If this waypoint is an elevator transition to a different floor, do NOT advance!
+        // The simulation engine elevator orchestrator will advance the robot once the elevator cab reaches destination.
+        if (targetWaypoint.nodeId.startsWith('elev_node_') && targetWaypoint.floorId !== this.floorId) {
+          this.speedMps = 0;
+          return;
+        }
+
+        // Arrived at standard waypoint
         this.position[0] = targetPos[0];
         this.position[2] = targetPos[2];
 

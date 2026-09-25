@@ -103,7 +103,7 @@ export const WarehouseScene: React.FC = () => {
       itemType = e.dataTransfer.getData('text/plain') || dragItem?.type || 'rack';
     }
 
-    const pos = ghostPosition || [0, floorElevation, 0];
+    const pos = ghostPosition || [-6, floorElevation, 4];
     const newObj = buildDefaultObject(itemType, activeFloorId, pos);
 
     addObject(activeFloorId, newObj);

@@ -95,7 +95,7 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
 
         if (obj.type === 'elevator') {
           const isSelected = selectedObjectId === obj.id;
-          // Static elevator shaft marker on floor (the moving cab is rendered by ElevatorMesh via simulation state)
+          // Clean floor landing zone indicator for elevator threshold
           return (
             <group
               key={`static_${obj.id}_${obj.floorId}`}
@@ -105,25 +105,16 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
                 onSelectObject && onSelectObject(obj.id);
               }}
             >
-              {/* Shaft floor marker — yellow hazard stripes */}
+              {/* Shaft threshold floor indicator */}
               <mesh position={[0, 0.01, 0]}>
                 <boxGeometry args={[3.2, 0.02, 3.2]} />
-                <meshBasicMaterial color={isSelected ? colors.primary : '#C88900'} transparent opacity={0.55} />
+                <meshBasicMaterial color={isSelected ? colors.primary : '#C88900'} transparent opacity={0.3} />
               </mesh>
-              {/* Corner bollards */}
-              {([-1.3, 1.3] as number[]).map((x) =>
-                ([-1.3, 1.3] as number[]).map((z) => (
-                  <mesh key={`bollard_${x}_${z}`} position={[x, 0.25, z]}>
-                    <cylinderGeometry args={[0.06, 0.06, 0.5, 8]} />
-                    <meshStandardMaterial color="#F5A623" />
-                  </mesh>
-                ))
-              )}
-              {/* ELEV label plate */}
-              <mesh position={[0, 0.05, 1.6]}>
-                <boxGeometry args={[1.0, 0.04, 0.4]} />
-                <meshBasicMaterial color={isSelected ? colors.primary : '#C88900'} />
-              </mesh>
+              {/* Floor boundary border */}
+              <lineSegments position={[0, 0.02, 0]}>
+                <edgesGeometry args={[new (window as any).THREE.BoxGeometry(3.2, 0.02, 3.2)]} />
+                <lineBasicMaterial color={isSelected ? colors.primary : '#C88900'} />
+              </lineSegments>
             </group>
           );
         }

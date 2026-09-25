@@ -4,7 +4,7 @@
 export function buildDefaultObject(
   type: string,
   floorId: string,
-  position: [number, number, number] = [0, 0, 0]
+  position: [number, number, number] = [-6, 0, 4]
 ): any {
   const id = `${type.toUpperCase().replace('_', '-')}-${Math.floor(100 + Math.random() * 900)}`;
 
