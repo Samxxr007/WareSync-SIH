@@ -18,6 +18,7 @@ import {
   SimulationFrame,
   SimulationMode,
   WarehouseModel,
+  WarehouseTask,
 } from '@waresync/core';
 
 /** Create a typed worker pointing at the simulation worker module */
@@ -97,15 +98,19 @@ export const useSimulationStore = create<SimulationStore>((set, get) => {
 
       if (targetMode === 'SIDE_BY_SIDE') {
         // --- Inline dual engines ---
-        const compilation = compileWarehouse(model);
+        // CRITICAL: each engine must get a fully independent deep-clone of both
+        // the model AND the navGraph so their SIPP intent stores never cross-contaminate.
+        const compilationP = compileWarehouse(JSON.parse(JSON.stringify(model)));
+        const compilationB = compileWarehouse(JSON.parse(JSON.stringify(model)));
+
         sideEngine = new SimulationEngine(
           JSON.parse(JSON.stringify(model)),
-          compilation.navGraph,
+          compilationP.navGraph,
           { mode: 'PROPOSED' },
         );
         sideBaseline = new SimulationEngine(
           JSON.parse(JSON.stringify(model)),
-          compilation.navGraph,
+          compilationB.navGraph,
           { mode: 'BASELINE' },
         );
         sideEngine.addTasks(JSON.parse(JSON.stringify(INITIAL_DEMO_TASKS)));
@@ -116,14 +121,15 @@ export const useSimulationStore = create<SimulationStore>((set, get) => {
 
         set({ mode: targetMode, isPlaying: false, currentFrame: pFrame, baselineFrame: bFrame });
 
-        // Start ticker — only steps when isPlaying
+        // Tick at 200ms — matches the 0.2s time-step so one real-time second ≈ speed× sim-seconds
         sideTimer = setInterval(() => {
           if (!get().isPlaying) return;
           const { speed } = get();
           const pf = sideEngine!.step(0.2 * speed);
           const bf = sideBaseline!.step(0.2 * speed);
           set({ currentFrame: pf, baselineFrame: bf });
-        }, 100);
+        }, 200);
+
       } else {
         // --- Worker-based single engine ---
         worker = createSimWorker();
