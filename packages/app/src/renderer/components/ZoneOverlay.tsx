@@ -4,6 +4,7 @@
  * and a label rendered via Drei <Html>.
  */
 import React from 'react';
+import * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import type { WarehouseZone } from '@waresync/core';
 
@@ -55,7 +56,7 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({
             {/* Border wireframe */}
             <lineSegments>
               <edgesGeometry
-                args={[new (require('three').BoxGeometry)(w, 0.01, d)]}
+                args={[new THREE.BoxGeometry(w, 0.01, d)]}
               />
               <lineBasicMaterial color={color} transparent opacity={0.6} />
             </lineSegments>
