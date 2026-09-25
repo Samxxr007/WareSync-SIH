@@ -179,14 +179,21 @@ export class RobotAgent {
     if (this.currentPath.length > 0 && this.currentPathIndex < this.currentPath.length) {
       const targetWaypoint = this.currentPath[this.currentPathIndex]!;
 
-      // If yielding or waiting (e.g. for elevator or queue line), pause speed
-      if (this.status === 'YIELDING' || this.status === 'WAITING') {
+      // YIELDING: paused by coordination loop — always wait (will be released by runDecentralizedCoordination)
+      if (this.status === 'YIELDING') {
         this.speedMps = 0;
         this.waitTimeSec += dtSec;
         return;
       }
 
-      // In BASELINE mode: check stop-and-wait lock
+      // WAITING in PROPOSED: paused by elevator/obstacle — will be released by engine coordination
+      if (this.status === 'WAITING' && mode !== 'BASELINE') {
+        this.speedMps = 0;
+        this.waitTimeSec += dtSec;
+        return;
+      }
+
+      // In BASELINE mode: check stop-and-wait lock (retry each tick even if currently WAITING)
       if (mode === 'BASELINE') {
         const canEnter = stopAndWaitCoordinator.tryAcquireNode(
           targetWaypoint.nodeId,

@@ -274,12 +274,14 @@ export class SimulationEngine {
 
         for (let idx = 0; idx < floorWaiters.length; idx++) {
           const item = floorWaiters[idx]!;
+          // isTopCandidate = globally first in queue (highest priority), cab is free, and it's this floor's first waiter
           const isTopCandidate = canBoardAny && idx === 0 && waitingList[0]?.robot.id === item.robot.id;
 
           if (isTopCandidate) {
             if (cabAtThisFloor) {
-              // Cab is here and ready: allow robot to enter cab
+              // Cab is here and ready — let the robot drive in freely
               if (item.dist <= 1.0) {
+                // Close enough to board
                 const boarded = elev.boardRobot(item.robot.id, item.targetFloorId);
                 if (boarded) {
                   item.robot.position[0] = elevX;
@@ -293,29 +295,36 @@ export class SimulationEngine {
                   );
                 }
               } else {
-                // Moving into elevator
+                // Approach freely — NEVER freeze top candidate when cab is ready
                 item.robot.status = 'MOVING';
               }
             } else {
-              // Top candidate, but elevator is at another floor: summon elevator and hold at standoff
+              // Top candidate, elevator at another floor: summon and wait patiently at gate
               elev.requestElevator(item.robot.id, fId);
-              if (item.dist <= 2.6) {
+              // Only pin the robot if it has already reached the gate zone (dist <= 3.0m).
+              // Do NOT teleport it from far away — let it navigate here naturally.
+              if (item.dist <= 3.0) {
                 item.robot.status = 'WAITING';
                 item.robot.speedMps = 0;
-                item.robot.position[0] = elevX;
-                item.robot.position[2] = elevZ + 2.6;
+                // Gently nudge to gate position only if it overshot (past the door)
+                if (item.robot.position[2] < elevZ + 2.4) {
+                  item.robot.position[2] = elevZ + 2.6;
+                }
               }
+              // If robot is still far away, leave it MOVING — it will navigate to the elevator normally
             }
           } else {
-            // Not authorized to enter shaft: must wait at safe standoff queue position
-            // Each queued robot holds at 2.6m + (queueIndex * 1.8m)
-            const standoffZ = elevZ + (2.6 + idx * 1.8);
-            if (item.dist <= (2.6 + idx * 1.8) + 0.5) {
+            // Not first in queue — hold at standoff slot to avoid blocking the shaft
+            // Slot positions: 2.6m, 4.4m, 6.2m, ... in front of elevator door
+            const standoffZ = elevZ + 2.6 + idx * 1.8;
+            // Only pin if robot has reached the general standoff zone (within 1.5m of its slot)
+            if (item.dist <= standoffZ - elevZ + 1.5) {
               item.robot.status = 'WAITING';
               item.robot.speedMps = 0;
               item.robot.position[0] = elevX;
               item.robot.position[2] = standoffZ;
             }
+            // If still far, let it navigate; it will get pinned once it arrives
           }
         }
       }
@@ -449,26 +458,28 @@ export class SimulationEngine {
         if (robotA.floorId !== robotB.floorId) continue;
         if (robotA.currentPath.length === 0 || robotB.currentPath.length === 0) continue;
 
-        // Check distance
         const dx = robotA.position[0] - robotB.position[0];
         const dz = robotA.position[2] - robotB.position[2];
         const dist = Math.sqrt(dx * dx + dz * dz);
 
-        // Virtual Safety Bumper (LiDAR ISO 3691-4):
-        // If one robot is stopped (WAITING or YIELDING) and another is within 2.2m, the moving robot must yield/stop
-        if (dist < 2.2) {
-          if (robotA.status === 'MOVING' && (robotB.status === 'WAITING' || robotB.status === 'YIELDING')) {
-            robotA.status = 'YIELDING';
-            robotA.speedMps = 0;
-            continue;
-          } else if (robotB.status === 'MOVING' && (robotA.status === 'WAITING' || robotA.status === 'YIELDING')) {
+        // --- Virtual Safety Bumper ---
+        // CRITICAL: Only fire when ONE side is already stopped. Never set BOTH sides to YIELDING
+        // simultaneously (that would create a mutual lock that the release loop can't break).
+        if (dist < 2.0) {
+          const aIsStopped = robotA.status === 'WAITING' || robotA.status === 'YIELDING';
+          const bIsStopped = robotB.status === 'WAITING' || robotB.status === 'YIELDING';
+          if (aIsStopped && robotB.status === 'MOVING') {
             robotB.status = 'YIELDING';
             robotB.speedMps = 0;
+            continue;
+          } else if (bIsStopped && robotA.status === 'MOVING') {
+            robotA.status = 'YIELDING';
+            robotA.speedMps = 0;
             continue;
           }
         }
 
-        // Near-proximity conflict between two moving AMRs
+        // --- Moving-vs-Moving conflict: right-of-way resolution ---
         if (dist < 3.2 && robotA.status === 'MOVING' && robotB.status === 'MOVING') {
           this.metricsCollector.recordConflict();
 
@@ -505,7 +516,6 @@ export class SimulationEngine {
           if (resolved.resolution) {
             const yielding = this.robots.get(resolved.resolution.yieldingRobotId);
             const proceeding = this.robots.get(resolved.resolution.proceedingRobotId);
-
             if (yielding && proceeding) {
               yielding.status = 'YIELDING';
               this.logEvent(
@@ -520,18 +530,61 @@ export class SimulationEngine {
       }
     }
 
-    // Release yielding robots once conflict zone is clear
+    // --- Release loop ---
+    // Build set of robots legitimately held in an elevator queue (must NOT be released here)
+    const elevatorQueuedIds = new Set<string>();
+    for (const elev of this.elevators.values()) {
+      if (elev.occupantRobotId) elevatorQueuedIds.add(elev.occupantRobotId);
+      for (const qId of elev.queueRobotIds) elevatorQueuedIds.add(qId);
+    }
+
     for (const robot of robotList) {
       if (robot.status === 'YIELDING') {
-        const stillInConflict = robotList.some(
+        // Use same 2.0m radius as the bumper so there's no threshold mismatch
+        const nearObstacle = robotList.some(
           (other) =>
             other.id !== robot.id &&
             other.floorId === robot.floorId &&
-            Math.hypot(robot.position[0] - other.position[0], robot.position[2] - other.position[2]) < 2.5
+            (other.status === 'WAITING' || other.status === 'YIELDING') &&
+            Math.hypot(robot.position[0] - other.position[0], robot.position[2] - other.position[2]) < 2.0
         );
-        if (!stillInConflict) {
+        if (!nearObstacle) {
           robot.status = 'MOVING';
           this.logEvent(`${robot.id} conflict cleared. Resuming trajectory.`, 'ROBOT', 'INFO');
+        }
+        // Deadlock watchdog: YIELDING robot stuck for >8s → force-resume
+        if (robot.waitTimeSec > 8) {
+          robot.waitTimeSec = 0;
+          robot.status = 'MOVING';
+          this.logEvent(`${robot.id} deadlock watchdog fired — force-resuming after >8s yield.`, 'ROBOT', 'INFO');
+        }
+      } else if (robot.status === 'WAITING' && robot.currentTask) {
+        // Release WAITING robots that are not in any elevator queue
+        if (!elevatorQueuedIds.has(robot.id)) {
+          const pathBlocked = robot.currentPath
+            .slice(robot.currentPathIndex)
+            .some((wp) => blockedNodes.has(wp.nodeId));
+          if (!pathBlocked) {
+            robot.status = 'MOVING';
+            this.logEvent(`${robot.id} WAITING released (not in elevator queue). Resuming.`, 'ROBOT', 'INFO');
+          }
+        }
+        // Elevator watchdog: robot stuck in queue >20s → replan and force-move
+        if (robot.waitTimeSec > 20 && elevatorQueuedIds.has(robot.id)) {
+          const startNode = this.findNearestNodeId(robot.position, robot.floorId);
+          let goalNode = '';
+          if (robot.taskPhase === 'NAV_TO_PICKUP' && robot.currentTask) {
+            goalNode = `pickup_${robot.currentTask.pickupRackId}`;
+          } else if (robot.taskPhase === 'NAV_TO_DROP' && robot.currentTask) {
+            goalNode = `station_${robot.currentTask.dropStationId}`;
+          }
+          if (goalNode) {
+            const activeMode: 'BASELINE' | 'PROPOSED' = this.mode === 'SIDE_BY_SIDE' ? 'PROPOSED' : this.mode;
+            robot.planRoute(this.navGraph, startNode, goalNode, this.simTimeSec, activeMode, blockedNodes);
+            robot.waitTimeSec = 0;
+            robot.status = 'MOVING';
+            this.logEvent(`${robot.id} elevator watchdog: replanned + force-resumed after 20s stall.`, 'ROBOT', 'INFO');
+          }
         }
       }
     }
