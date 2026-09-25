@@ -165,7 +165,8 @@ export class SimulationEngine {
     this.dispatchPendingTasks(blockedNodes);
 
     // 2. Multi-robot coordination (P2P in Proposed mode)
-    if (this.mode === 'PROPOSED') {
+    // SIDE_BY_SIDE also uses PROPOSED coordination for its engine instance
+    if (this.mode === 'PROPOSED' || this.mode === 'SIDE_BY_SIDE') {
       this.runDecentralizedCoordination(blockedNodes);
     }
 
