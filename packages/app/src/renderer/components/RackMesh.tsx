@@ -1,4 +1,5 @@
 import React from 'react';
+import * as THREE from 'three';
 import { RackObject } from '@waresync/core';
 import { colors } from '../../design-system/tokens';
 
@@ -77,7 +78,7 @@ export const RackMesh: React.FC<RackMeshProps> = ({
       {/* Subtle selection boundary */}
       {isSelected && (
         <lineSegments position={[0, height / 2, 0]}>
-          <edgesGeometry args={[new (window as any).THREE.BoxGeometry(width + 0.1, height + 0.1, depth + 0.1)]} />
+          <edgesGeometry args={[new THREE.BoxGeometry(width + 0.1, height + 0.1, depth + 0.1)]} />
           <lineBasicMaterial color={colors.primary} linewidth={2} />
         </lineSegments>
       )}

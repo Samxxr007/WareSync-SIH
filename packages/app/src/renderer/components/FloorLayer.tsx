@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import * as THREE from 'three';
 import { Floor, RackObject, WarehouseObject } from '@waresync/core';
 import { colors } from '../../design-system/tokens';
 import { RackMesh } from './RackMesh';
@@ -112,7 +113,7 @@ export const FloorLayer: React.FC<FloorLayerProps> = ({
               </mesh>
               {/* Floor boundary border */}
               <lineSegments position={[0, 0.02, 0]}>
-                <edgesGeometry args={[new (window as any).THREE.BoxGeometry(3.2, 0.02, 3.2)]} />
+                <edgesGeometry args={[new THREE.BoxGeometry(3.2, 0.02, 3.2)]} />
                 <lineBasicMaterial color={isSelected ? colors.primary : '#C88900'} />
               </lineSegments>
             </group>
