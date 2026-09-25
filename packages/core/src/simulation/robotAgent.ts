@@ -35,6 +35,7 @@ export class RobotAgent {
   public waitTimeSec = 0;
   public rerouteCount = 0;
   public taskStartTimeSec = 0;
+  public lastOccupiedNodeId?: string;
 
   constructor(spec: AMRObject) {
     this.id = spec.id;
@@ -239,7 +240,10 @@ export class RobotAgent {
         this.position[2] = targetPos[2];
 
         if (mode === 'BASELINE') {
-          stopAndWaitCoordinator.releaseNode(targetWaypoint.nodeId, this.id);
+          if (this.lastOccupiedNodeId && this.lastOccupiedNodeId !== targetWaypoint.nodeId) {
+            stopAndWaitCoordinator.releaseNode(this.lastOccupiedNodeId, this.id);
+          }
+          this.lastOccupiedNodeId = targetWaypoint.nodeId;
         }
 
         this.currentPathIndex++;

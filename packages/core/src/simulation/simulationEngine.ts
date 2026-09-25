@@ -187,6 +187,9 @@ export class SimulationEngine {
     // 4. Update Robots
     const activeMode: 'BASELINE' | 'PROPOSED' = this.mode === 'SIDE_BY_SIDE' ? 'PROPOSED' : this.mode;
     for (const robot of this.robots.values()) {
+      if (robot.status === 'WAITING' || robot.status === 'YIELDING') {
+        this.metricsCollector.recordWaitTime(dt);
+      }
       robot.update(
         dt,
         this.simTimeSec,
