@@ -164,13 +164,17 @@ export class SimulationEngine {
     // 1. Task dispatching for idle AMRs
     this.dispatchPendingTasks(blockedNodes);
 
-    // 2. Multi-robot coordination (P2P in Proposed mode)
+    // 2. Elevator orchestration — runs BEFORE coordination so the top-candidate's
+    //    MOVING status is set before the safety bumper logic runs.
+    this.runElevatorOrchestration(dt, blockedNodes);
+
+    // 3. Multi-robot coordination (P2P in Proposed mode)
     // SIDE_BY_SIDE also uses PROPOSED coordination for its engine instance
     if (this.mode === 'PROPOSED' || this.mode === 'SIDE_BY_SIDE') {
       this.runDecentralizedCoordination(blockedNodes);
     }
 
-    // 3. Update Robots
+    // 4. Update Robots
     const activeMode: 'BASELINE' | 'PROPOSED' = this.mode === 'SIDE_BY_SIDE' ? 'PROPOSED' : this.mode;
     for (const robot of this.robots.values()) {
       robot.update(
@@ -189,150 +193,6 @@ export class SimulationEngine {
       );
     }
 
-    // 4. Elevator orchestration: handle calling, boarding, vertical transit, disembarking, and safe queuing
-    for (const elev of this.elevators.values()) {
-      const conn = this.warehouseModel.connections.find((c) => c.id === elev.id);
-      const elevPos = conn?.entryNodesByFloor['floor-1'] || [0, 0, 0];
-      const elevX = elevPos[0];
-      const elevZ = elevPos[2];
-
-      const isCabInTransit = Math.abs(elev.currentHeightMeters - elev.targetHeightMeters) > 0.08;
-
-      // A. Active occupant inside elevator
-      if (elev.occupantRobotId) {
-        const occupant = this.robots.get(elev.occupantRobotId);
-        if (occupant) {
-          // Lock robot inside the cab
-          occupant.position[0] = elevX;
-          occupant.position[2] = elevZ;
-          occupant.position[1] = elev.currentHeightMeters;
-          occupant.speedMps = 0;
-          occupant.status = 'MOVING';
-
-          // Check if arrived at target floor
-          if (!isCabInTransit) {
-            let destFloorId = occupant.floorId;
-            for (const [fId, elevM] of Object.entries(elev.floorElevations)) {
-              if (Math.abs(elevM - elev.targetHeightMeters) <= 0.08) {
-                destFloorId = fId;
-                break;
-              }
-            }
-
-            occupant.floorId = destFloorId;
-            occupant.position[1] = elev.targetHeightMeters;
-            // Step forward OUT of the elevator shaft to immediately clear the landing
-            occupant.position[2] = elevZ + 2.5;
-            occupant.currentPathIndex++;
-            elev.exitRobot(occupant.id);
-            occupant.status = 'MOVING';
-
-            this.logEvent(
-              `Elevator ${elev.id} delivered ${occupant.id} to ${destFloorId}. Shaft cleared.`,
-              'ROBOT',
-              'INFO'
-            );
-          }
-        }
-      }
-
-      // B. Manage waiting / approaching robots across all floors
-      const waitingList: { robot: RobotAgent; targetFloorId: string; dist: number }[] = [];
-      for (const robot of this.robots.values()) {
-        if (robot.id === elev.occupantRobotId) continue;
-        if (robot.currentPath.length > 0 && robot.currentPathIndex < robot.currentPath.length) {
-          const targetWaypoint = robot.currentPath[robot.currentPathIndex];
-          if (
-            targetWaypoint &&
-            targetWaypoint.nodeId.startsWith(`elev_node_${elev.id}`) &&
-            targetWaypoint.floorId !== robot.floorId
-          ) {
-            const dist = Math.hypot(robot.position[0] - elevX, robot.position[2] - elevZ);
-            waitingList.push({ robot, targetFloorId: targetWaypoint.floorId, dist });
-          }
-        }
-      }
-
-      // Sort queue: higher mission priority first, then arrival distance
-      const prioWeights = { CRITICAL: 3, HIGH: 2, NORMAL: 1 };
-      waitingList.sort((a, b) => {
-        const wA = prioWeights[a.robot.currentTask?.priority || 'NORMAL'] || 1;
-        const wB = prioWeights[b.robot.currentTask?.priority || 'NORMAL'] || 1;
-        if (wA !== wB) return wB - wA;
-        return a.dist - b.dist;
-      });
-
-      elev.queueRobotIds = waitingList.map((w) => w.robot.id);
-
-      const canBoardAny = !elev.occupantRobotId && !isCabInTransit;
-
-      // Group waiting robots by their current floor to arrange clean standoff queues
-      const floorsWithWaiters = Array.from(new Set(waitingList.map((w) => w.robot.floorId)));
-      for (const fId of floorsWithWaiters) {
-        const floorWaiters = waitingList.filter((w) => w.robot.floorId === fId);
-        const pickupHeight = elev.floorElevations[fId] ?? 0;
-        const cabAtThisFloor = Math.abs(elev.currentHeightMeters - pickupHeight) <= 0.08;
-
-        for (let idx = 0; idx < floorWaiters.length; idx++) {
-          const item = floorWaiters[idx]!;
-          // isTopCandidate = globally first in queue (highest priority), cab is free, and it's this floor's first waiter
-          const isTopCandidate = canBoardAny && idx === 0 && waitingList[0]?.robot.id === item.robot.id;
-
-          if (isTopCandidate) {
-            if (cabAtThisFloor) {
-              // Cab is here and ready — let the robot drive in freely
-              if (item.dist <= 1.0) {
-                // Close enough to board
-                const boarded = elev.boardRobot(item.robot.id, item.targetFloorId);
-                if (boarded) {
-                  item.robot.position[0] = elevX;
-                  item.robot.position[2] = elevZ;
-                  item.robot.position[1] = elev.currentHeightMeters;
-                  item.robot.speedMps = 0;
-                  this.logEvent(
-                    `${item.robot.id} boarded elevator ${elev.id} on ${fId} → heading to ${item.targetFloorId}`,
-                    'ROBOT',
-                    'INFO'
-                  );
-                }
-              } else {
-                // Approach freely — NEVER freeze top candidate when cab is ready
-                item.robot.status = 'MOVING';
-              }
-            } else {
-              // Top candidate, elevator at another floor: summon and wait patiently at gate
-              elev.requestElevator(item.robot.id, fId);
-              // Only pin the robot if it has already reached the gate zone (dist <= 3.0m).
-              // Do NOT teleport it from far away — let it navigate here naturally.
-              if (item.dist <= 3.0) {
-                item.robot.status = 'WAITING';
-                item.robot.speedMps = 0;
-                // Gently nudge to gate position only if it overshot (past the door)
-                if (item.robot.position[2] < elevZ + 2.4) {
-                  item.robot.position[2] = elevZ + 2.6;
-                }
-              }
-              // If robot is still far away, leave it MOVING — it will navigate to the elevator normally
-            }
-          } else {
-            // Not first in queue — hold at standoff slot to avoid blocking the shaft
-            // Slot positions: 2.6m, 4.4m, 6.2m, ... in front of elevator door
-            const standoffZ = elevZ + 2.6 + idx * 1.8;
-            // Only pin if robot has reached the general standoff zone (within 1.5m of its slot)
-            if (item.dist <= standoffZ - elevZ + 1.5) {
-              item.robot.status = 'WAITING';
-              item.robot.speedMps = 0;
-              item.robot.position[0] = elevX;
-              item.robot.position[2] = standoffZ;
-            }
-            // If still far, let it navigate; it will get pinned once it arrives
-          }
-        }
-      }
-
-      // Advance elevator cab physics
-      elev.update(dt);
-    }
 
     // 5. Update Metrics
     const activeRobotsCount = Array.from(this.robots.values()).filter(
@@ -343,7 +203,120 @@ export class SimulationEngine {
     return this.createFrameSnapshot();
   }
 
+  private runElevatorOrchestration(dt: number, _blockedNodes: Set<string>): void {
+    for (const elev of this.elevators.values()) {
+      const conn = this.warehouseModel.connections.find((c) => c.id === elev.id);
+      const elevPos = conn?.entryNodesByFloor['floor-1'] || [0, 0, 0];
+      const elevX = elevPos[0];
+      const elevZ = elevPos[2];
+
+      const isCabInTransit = Math.abs(elev.currentHeightMeters - elev.targetHeightMeters) > 0.08;
+
+      // A. Lock occupant inside cab; exit when arrived
+      if (elev.occupantRobotId) {
+        const occupant = this.robots.get(elev.occupantRobotId);
+        if (occupant) {
+          occupant.position[0] = elevX;
+          occupant.position[2] = elevZ;
+          occupant.position[1] = elev.currentHeightMeters;
+          occupant.speedMps = 0;
+          occupant.status = 'MOVING';
+
+          if (!isCabInTransit) {
+            let destFloorId = occupant.floorId;
+            for (const [fId, elevM] of Object.entries(elev.floorElevations)) {
+              if (Math.abs(elevM - elev.targetHeightMeters) <= 0.08) { destFloorId = fId; break; }
+            }
+            occupant.floorId = destFloorId;
+            occupant.position[1] = elev.targetHeightMeters;
+            occupant.position[2] = elevZ + 2.5; // eject forward
+            occupant.currentPathIndex++;
+            elev.exitRobot(occupant.id);
+            occupant.status = 'MOVING';
+            this.logEvent(`Elevator ${elev.id} delivered ${occupant.id} to ${destFloorId}.`, 'ROBOT', 'INFO');
+          }
+        }
+      }
+
+      // B. Build sorted queue of robots heading to this elevator
+      const waitingList: { robot: RobotAgent; targetFloorId: string; dist: number }[] = [];
+      for (const robot of this.robots.values()) {
+        if (robot.id === elev.occupantRobotId) continue;
+        if (robot.currentPath.length > 0 && robot.currentPathIndex < robot.currentPath.length) {
+          const wp = robot.currentPath[robot.currentPathIndex];
+          if (wp && wp.nodeId.startsWith(`elev_node_${elev.id}`) && wp.floorId !== robot.floorId) {
+            const dist = Math.hypot(robot.position[0] - elevX, robot.position[2] - elevZ);
+            waitingList.push({ robot, targetFloorId: wp.floorId, dist });
+          }
+        }
+      }
+
+      const prioWeights = { CRITICAL: 3, HIGH: 2, NORMAL: 1 };
+      waitingList.sort((a, b) => {
+        const wA = prioWeights[a.robot.currentTask?.priority || 'NORMAL'] || 1;
+        const wB = prioWeights[b.robot.currentTask?.priority || 'NORMAL'] || 1;
+        return wA !== wB ? wB - wA : a.dist - b.dist;
+      });
+
+      elev.queueRobotIds = waitingList.map((w) => w.robot.id);
+
+      const canBoardAny = !elev.occupantRobotId && !isCabInTransit;
+
+      // C. Per-floor standoff management
+      const floorsWithWaiters = Array.from(new Set(waitingList.map((w) => w.robot.floorId)));
+      for (const fId of floorsWithWaiters) {
+        const floorWaiters = waitingList.filter((w) => w.robot.floorId === fId);
+        const pickupHeight = elev.floorElevations[fId] ?? 0;
+        const cabAtThisFloor = Math.abs(elev.currentHeightMeters - pickupHeight) <= 0.08;
+
+        for (let idx = 0; idx < floorWaiters.length; idx++) {
+          const item = floorWaiters[idx]!;
+          const isTopCandidate = canBoardAny && idx === 0 && waitingList[0]?.robot.id === item.robot.id;
+
+          if (isTopCandidate) {
+            if (cabAtThisFloor) {
+              if (item.dist <= 1.0) {
+                const boarded = elev.boardRobot(item.robot.id, item.targetFloorId);
+                if (boarded) {
+                  item.robot.position[0] = elevX;
+                  item.robot.position[2] = elevZ;
+                  item.robot.position[1] = elev.currentHeightMeters;
+                  item.robot.speedMps = 0;
+                  this.logEvent(`${item.robot.id} boarded ${elev.id} → ${item.targetFloorId}`, 'ROBOT', 'INFO');
+                }
+              } else {
+                // Cab here, top candidate not yet close: drive in freely (never freeze)
+                item.robot.status = 'MOVING';
+              }
+            } else {
+              // Elevator en route: summon & hold at gate only once nearby
+              elev.requestElevator(item.robot.id, fId);
+              if (item.dist <= 3.0) {
+                item.robot.status = 'WAITING';
+                item.robot.speedMps = 0;
+                if (item.robot.position[2] < elevZ + 2.4) item.robot.position[2] = elevZ + 2.6;
+              }
+            }
+          } else {
+            // Non-top: hold at assigned standoff slot (do NOT block top candidate's path)
+            const standoffZ = elevZ + 2.6 + idx * 1.8;
+            if (item.dist <= standoffZ - elevZ + 1.5) {
+              item.robot.status = 'WAITING';
+              item.robot.speedMps = 0;
+              item.robot.position[0] = elevX;
+              item.robot.position[2] = standoffZ;
+            }
+          }
+        }
+      }
+
+      elev.update(dt);
+    }
+  }
+
+
   private dispatchPendingTasks(blockedNodes: Set<string>): void {
+
     // Top up pending queue if running low to ensure all 6 robots remain continuously busy
     if (this.pendingTasks.length < 4) {
       const racks = ['R01', 'R02', 'R03_F1', 'R04_F1', 'R12', 'R14', 'R17', 'R03'];
@@ -464,16 +437,21 @@ export class SimulationEngine {
         const dist = Math.sqrt(dx * dx + dz * dz);
 
         // --- Virtual Safety Bumper ---
-        // CRITICAL: Only fire when ONE side is already stopped. Never set BOTH sides to YIELDING
-        // simultaneously (that would create a mutual lock that the release loop can't break).
+        // CRITICAL: Only fire when ONE side is already stopped. Never set BOTH sides to YIELDING.
+        // EXCEPTION: If the MOVING robot's current waypoint is an elevator node, it is the
+        // authorized top-candidate approaching the shaft — DO NOT stop it with the bumper.
         if (dist < 2.0) {
           const aIsStopped = robotA.status === 'WAITING' || robotA.status === 'YIELDING';
           const bIsStopped = robotB.status === 'WAITING' || robotB.status === 'YIELDING';
-          if (aIsStopped && robotB.status === 'MOVING') {
+          // Check if the MOVING robot is heading INTO the elevator (exempt from bumper)
+          const aHeadingToElev = robotA.currentPath[robotA.currentPathIndex]?.nodeId.startsWith('elev_node_') ?? false;
+          const bHeadingToElev = robotB.currentPath[robotB.currentPathIndex]?.nodeId.startsWith('elev_node_') ?? false;
+
+          if (aIsStopped && robotB.status === 'MOVING' && !bHeadingToElev) {
             robotB.status = 'YIELDING';
             robotB.speedMps = 0;
             continue;
-          } else if (bIsStopped && robotA.status === 'MOVING') {
+          } else if (bIsStopped && robotA.status === 'MOVING' && !aHeadingToElev) {
             robotA.status = 'YIELDING';
             robotA.speedMps = 0;
             continue;
