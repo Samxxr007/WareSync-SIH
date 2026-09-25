@@ -17,7 +17,8 @@ export const FloorVisibilityControls: React.FC<FloorVisibilityControlsProps> = (
   floors,
   position = [-6, 4, 0],
 }) => {
-  const { visibleFloors, toggleFloorVisibility } = useUIStore();
+  const { visibleFloors, toggleFloorVisibility, isBooting } = useUIStore();
+  if (isBooting) return null;
 
   return (
     <Html position={position} style={{ pointerEvents: 'auto' }}>

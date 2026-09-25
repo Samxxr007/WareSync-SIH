@@ -11,6 +11,8 @@ import {
   WarehouseRule,
 } from '@waresync/core';
 
+import { useSimulationStore } from './simulationStore';
+
 interface WarehouseStore {
   model: WarehouseModel;
   activeFloorId: string;
@@ -23,7 +25,7 @@ interface WarehouseStore {
   loadModel: (model: WarehouseModel) => void;
 }
 
-const STORAGE_KEY = 'waresync_warehouse_model_v1';
+const STORAGE_KEY = 'waresync_warehouse_model_v2';
 
 function sanitizeModel(model: WarehouseModel): { model: WarehouseModel; cleaned: boolean } {
   let cleaned = false;
@@ -41,6 +43,21 @@ function sanitizeModel(model: WarehouseModel): { model: WarehouseModel; cleaned:
       return true;
     });
   }
+
+  // Ensure Floor 1 has at least 6 AMRs from DEMO_WAREHOUSE
+  const f1 = model.floors.find((f) => f.id === 'floor-1');
+  const demoF1 = DEMO_WAREHOUSE.floors.find((f) => f.id === 'floor-1');
+  if (f1 && demoF1) {
+    const existingAmrIds = new Set(f1.objects.filter((o) => o.type === 'amr').map((o) => o.id));
+    const demoAmrs = demoF1.objects.filter((o) => o.type === 'amr');
+    for (const amr of demoAmrs) {
+      if (!existingAmrIds.has(amr.id)) {
+        f1.objects.push(JSON.parse(JSON.stringify(amr)));
+        cleaned = true;
+      }
+    }
+  }
+
   return { model, cleaned };
 }
 
@@ -80,6 +97,12 @@ export const useWarehouseStore = create<WarehouseStore>((set) => ({
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       } catch (e) {}
+
+      // Notify simulation store to dynamically reroute robots around new additions
+      try {
+        useSimulationStore.getState().addDynamicObstacle(obj);
+      } catch (e) {}
+
       return { model: next };
     }),
 

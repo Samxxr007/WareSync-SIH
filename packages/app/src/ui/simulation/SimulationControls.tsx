@@ -1,10 +1,11 @@
-import React from 'react';
-import { Pause, Play, RotateCcw, SkipForward, AlertOctagon, Flame } from 'lucide-react';
+import React, { useState } from 'react';
+import { Pause, Play, RotateCcw, SkipForward, AlertOctagon, Flame, Plus } from 'lucide-react';
 import { useSimulationStore } from '../../store/simulationStore';
 import { useWarehouseStore } from '../../store/warehouseStore';
 import { useUIStore } from '../../store/uiStore';
 import { SimulationMode } from '@waresync/core';
 import { colors } from '../../design-system/tokens';
+import { AddTaskModal } from '../tasks/AddTaskModal';
 
 export const SimulationControls: React.FC = () => {
   const { model } = useWarehouseStore();
@@ -22,6 +23,7 @@ export const SimulationControls: React.FC = () => {
     triggerEmergency,
   } = useSimulationStore();
   const { sideBySideMode, setSideBySideMode } = useUIStore();
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
 
   const metrics = currentFrame?.metrics;
 
@@ -267,7 +269,32 @@ export const SimulationControls: React.FC = () => {
         >
           <AlertOctagon size={12} /> BLOCK AISLE
         </button>
+
+        <button
+          onClick={() => setIsTaskModalOpen(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 9px',
+            fontSize: '10px',
+            fontWeight: 700,
+            color: '#FFFFFF',
+            backgroundColor: colors.primary,
+            border: 'none',
+            borderRadius: 3,
+            cursor: 'pointer',
+          }}
+          title="Dispatch a custom mission to the robot fleet"
+        >
+          <Plus size={12} strokeWidth={2.5} /> + MISSION
+        </button>
       </div>
+
+      <AddTaskModal
+        isOpen={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+      />
     </div>
   );
 };

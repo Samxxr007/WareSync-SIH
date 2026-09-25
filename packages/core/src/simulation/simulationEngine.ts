@@ -91,6 +91,70 @@ export class SimulationEngine {
     this.metricsCollector.updateTime(this.simTimeSec, this.robots.size);
   }
 
+  public addTask(task: WarehouseTask): void {
+    this.pendingTasks.unshift(task); // prioritize operator-dispatched task
+    this.logEvent(
+      `Operator dispatched TASK-${task.id} (${task.sku} x${task.quantity}, Priority: ${task.priority}) to Rack ${task.pickupRackId}.`,
+      'TASK',
+      'INFO'
+    );
+    this.dispatchPendingTasks(this.emergencyManager.getActiveBlockedNodes());
+  }
+
+  public addDynamicObstacle(obj: any): void {
+    const [ox, , oz] = obj.position;
+    const [dx, , dz] = obj.dimensions || [2, 1, 2];
+    const halfX = Math.max(dx / 2, 1.2);
+    const halfZ = Math.max(dz / 2, 1.2);
+    const newlyBlocked: string[] = [];
+
+    // Find all graph nodes covered by the object or adjacent to it
+    for (const node of Object.values(this.navGraph.nodes)) {
+      if (node.floorId === obj.floorId) {
+        if (Math.abs(node.position[0] - ox) <= halfX && Math.abs(node.position[2] - oz) <= halfZ) {
+          newlyBlocked.push(node.id);
+        }
+      }
+    }
+
+    if (newlyBlocked.length > 0) {
+      this.triggerEmergencyEvent('DYNAMIC_OBSTACLE' as any, obj.floorId, newlyBlocked, `Dynamic ${obj.type} placed at [${ox.toFixed(1)}, ${oz.toFixed(1)}]`);
+    } else {
+      this.logEvent(`⚠️ Object ${obj.id} (${obj.type}) placed at [${ox.toFixed(1)}, ${oz.toFixed(1)}]. Fleet evaluating clearance.`, 'SAFETY', 'INFO');
+    }
+
+    // Immediately trigger rerouting for any robot heading through this area
+    const blockedSet = this.emergencyManager.getActiveBlockedNodes();
+    for (const robot of this.robots.values()) {
+      if (robot.floorId === obj.floorId && robot.currentPath.length > 0) {
+        const hitsObstacle = robot.currentPath.some((wp) =>
+          Math.hypot(wp.position[0] - ox, wp.position[2] - oz) < Math.max(halfX, halfZ) + 1.2 ||
+          blockedSet.has(wp.nodeId)
+        );
+
+        if (hitsObstacle) {
+          const startNode = this.findNearestNodeId(robot.position, robot.floorId);
+          let goalNode = '';
+          if (robot.taskPhase === 'NAV_TO_PICKUP' && robot.currentTask) {
+            goalNode = `pickup_${robot.currentTask.pickupRackId}`;
+          } else if (robot.taskPhase === 'NAV_TO_DROP' && robot.currentTask) {
+            goalNode = (robot as any).resolveDropNodeId(this.navGraph, robot.currentTask.dropStationId, robot.currentTask.dropFloorId);
+          } else if (robot.currentPath.length > 0) {
+            goalNode = robot.currentPath[robot.currentPath.length - 1]!.nodeId;
+          }
+
+          if (goalNode) {
+            const activeMode: 'BASELINE' | 'PROPOSED' = this.mode === 'SIDE_BY_SIDE' ? 'PROPOSED' : this.mode;
+            const replanned = robot.planRoute(this.navGraph, startNode, goalNode, this.simTimeSec, activeMode, blockedSet);
+            if (replanned) {
+              this.logEvent(`✓ ${robot.id} dynamically recalculated route around newly placed ${obj.type} via SIPP!`, 'ROBOT', 'INFO');
+            }
+          }
+        }
+      }
+    }
+  }
+
   public step(dtSec?: number): SimulationFrame {
     const dt = dtSec || this.timeStepSec;
     this.simTimeSec += dt;
@@ -228,42 +292,41 @@ export class SimulationEngine {
   }
 
   private dispatchPendingTasks(blockedNodes: Set<string>): void {
-    // If queue is empty AND all robots are idle, recycle tasks to keep fleet busy
-    if (this.pendingTasks.length === 0) {
-      const anyActive = Array.from(this.robots.values()).some(
-        (r) => r.status === 'MOVING' || r.status === 'WAITING' || r.status === 'YIELDING' || r.currentTask
-      );
-      if (!anyActive && this.simTimeSec > 5) {
-        // Recycle: generate new tasks from all racks
-        const racks = ['R12', 'R17', 'R14', 'R03'];
-        const stations = ['PACK-01', 'PACK-02', 'DOCK-01', 'DOCK-02'];
-        const pickupFloors: Record<string, string> = { R12: 'floor-2', R17: 'floor-2', R14: 'floor-2', R03: 'floor-3' };
-        const skus = ['SKU-A', 'SKU-B', 'SKU-C'];
-        const prios: Array<'NORMAL' | 'HIGH' | 'CRITICAL'> = ['NORMAL', 'HIGH', 'CRITICAL'];
-        const recycled: any[] = [];
-        for (let i = 0; i < 6; i++) {
-          const rack = racks[i % racks.length]!;
-          const station = stations[i % stations.length]!;
-          const isF1Station = true;
-          recycled.push({
-            id: `R${Math.floor(2000 + Math.random() * 8000)}`,
-            sku: skus[i % skus.length]!,
-            quantity: 5 + Math.floor(Math.random() * 20),
-            pickupRackId: rack,
-            pickupFloorId: pickupFloors[rack]!,
-            pickupLevel: 1 + Math.floor(Math.random() * 3),
-            dropStationId: station,
-            dropFloorId: 'floor-1',
-            weightKg: 10 + Math.random() * 60,
-            priority: prios[i % prios.length]!,
-            status: 'PENDING' as const,
-            createdTimeSec: this.simTimeSec,
-          });
-        }
-        this.pendingTasks.push(...recycled);
-        this.logEvent(`Task queue recycled: ${recycled.length} new tasks generated for continuous fleet operation.`, 'TASK', 'INFO');
+    // Top up pending queue if running low to ensure all 6 robots remain continuously busy
+    if (this.pendingTasks.length < 4) {
+      const racks = ['R01', 'R02', 'R03_F1', 'R04_F1', 'R12', 'R14', 'R17', 'R03'];
+      const stations = ['PACK-01', 'PACK-02', 'DOCK-01', 'DOCK-02'];
+      const pickupFloors: Record<string, string> = {
+        R01: 'floor-1',
+        R02: 'floor-1',
+        R03_F1: 'floor-1',
+        R04_F1: 'floor-1',
+        R12: 'floor-2',
+        R17: 'floor-2',
+        R14: 'floor-2',
+        R03: 'floor-3',
+      };
+      const skus = ['SKU-A', 'SKU-B', 'SKU-C'];
+      const prios: Array<'NORMAL' | 'HIGH' | 'CRITICAL'> = ['NORMAL', 'HIGH', 'CRITICAL'];
+      const needed = 8 - this.pendingTasks.length;
+      for (let i = 0; i < needed; i++) {
+        const rack = racks[Math.floor(Math.random() * racks.length)]!;
+        const station = stations[Math.floor(Math.random() * stations.length)]!;
+        this.pendingTasks.push({
+          id: `T${Math.floor(2000 + Math.random() * 8000)}`,
+          sku: skus[Math.floor(Math.random() * skus.length)]!,
+          quantity: 5 + Math.floor(Math.random() * 25),
+          pickupRackId: rack,
+          pickupFloorId: pickupFloors[rack] || 'floor-1',
+          pickupLevel: 1 + Math.floor(Math.random() * 3),
+          dropStationId: station,
+          dropFloorId: 'floor-1',
+          weightKg: 10 + Math.random() * 50,
+          priority: prios[Math.floor(Math.random() * prios.length)]!,
+          status: 'PENDING' as const,
+          createdTimeSec: this.simTimeSec,
+        });
       }
-      return;
     }
 
     const idleRobots = Array.from(this.robots.values())
@@ -275,6 +338,7 @@ export class SimulationEngine {
     const activeMode: 'BASELINE' | 'PROPOSED' = this.mode === 'SIDE_BY_SIDE' ? 'PROPOSED' : this.mode;
 
     for (let i = this.pendingTasks.length - 1; i >= 0; i--) {
+      if (idleRobots.length === 0) break;
       const task = this.pendingTasks[i]!;
       const allocation = allocateTask(task, idleRobots, this.warehouseModel.floors);
 
@@ -305,6 +369,12 @@ export class SimulationEngine {
               'INFO'
             );
             this.pendingTasks.splice(i, 1);
+
+            // Remove assigned robot from idleRobots pool so subsequent tasks are allocated to other idle AMRs
+            const idleIdx = idleRobots.findIndex((r) => r.id === robot.id);
+            if (idleIdx !== -1) {
+              idleRobots.splice(idleIdx, 1);
+            }
           }
         }
       }

@@ -41,6 +41,7 @@ export const WarehouseScene: React.FC = () => {
     dragItem,
     setDragItem,
     setDragPosition,
+    isBooting,
   } = useUIStore();
   const { setResult: setCompilerResult } = useCompilerStore();
 
@@ -272,7 +273,7 @@ export const WarehouseScene: React.FC = () => {
         })}
 
         {/* Zone Overlays */}
-        <ZoneOverlay zones={currentZones} floorY={floorElevation + 0.02} />
+        <ZoneOverlay zones={currentZones} floorY={floorElevation + 0.02} visible={!isBooting} />
 
         {/* 3D Drag Ghost & Guides */}
         <DragOverlay3D ghostPosition={ghostPosition} />

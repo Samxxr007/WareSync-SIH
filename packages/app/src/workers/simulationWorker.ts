@@ -55,5 +55,29 @@ self.onmessage = (e: MessageEvent) => {
       }
       break;
     }
+
+    case 'ADD_TASK': {
+      if (engine && payload) {
+        engine.addTask(payload);
+        self.postMessage({ type: 'FRAME', frame: engine.createFrameSnapshot() });
+      }
+      break;
+    }
+
+    case 'ADD_TASKS': {
+      if (engine && payload) {
+        engine.addTasks(payload);
+        self.postMessage({ type: 'FRAME', frame: engine.createFrameSnapshot() });
+      }
+      break;
+    }
+
+    case 'ADD_OBSTACLE': {
+      if (engine && payload) {
+        engine.addDynamicObstacle(payload);
+        self.postMessage({ type: 'FRAME', frame: engine.createFrameSnapshot() });
+      }
+      break;
+    }
   }
 };

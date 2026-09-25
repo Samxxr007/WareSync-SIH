@@ -102,12 +102,12 @@ export function compileWarehouse(model: WarehouseModel): CompilationResult {
         const nodeId = `node_${floor.id}_${Math.round(x)}_${Math.round(z)}`;
         const pos: Vec3 = [x, floorY, z];
 
-        // Check if inside any obstacle or wall
+        // Check if inside any obstacle, temporary blockage, or rack body
         const isBlocked = floor.objects.some((obj) => {
-          if (obj.type !== 'obstacle' && obj.type !== 'temporary_blockage') return false;
+          if (obj.type !== 'obstacle' && obj.type !== 'temporary_blockage' && obj.type !== 'rack') return false;
           const [ox, , oz] = obj.position;
           const [dx, , dz] = obj.dimensions;
-          return Math.abs(x - ox) < dx / 2 && Math.abs(z - oz) < dz / 2;
+          return Math.abs(x - ox) < (dx / 2) + 0.2 && Math.abs(z - oz) < (dz / 2) + 0.2;
         });
 
         if (!isBlocked) {

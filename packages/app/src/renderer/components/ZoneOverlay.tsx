@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import { Html } from '@react-three/drei';
 import type { WarehouseZone } from '@waresync/core';
 
+import { useUIStore } from '../../store/uiStore';
+
 const ZONE_COLORS: Record<string, string> = {
   storage: '#1769AA',
   staging: '#C88900',
@@ -29,7 +31,9 @@ export const ZoneOverlay: React.FC<ZoneOverlayProps> = ({
   floorY = 0.02,
   visible = true,
 }) => {
-  if (!visible) return null;
+  const isBooting = useUIStore((s) => s.isBooting);
+  if (isBooting || !visible) return null;
+
 
   return (
     <group name="zone-overlays">

@@ -4,18 +4,28 @@ import { useSimulationStore } from '../../store/simulationStore';
 import { allocateTask, AMRObject, INITIAL_DEMO_TASKS, WarehouseTask } from '@waresync/core';
 import { StatusBadge } from '../../design-system/components/StatusBadge';
 import { colors } from '../../design-system/tokens';
+import { AddTaskModal } from '../tasks/AddTaskModal';
+import { Plus } from 'lucide-react';
 
 export const TasksScreen: React.FC = () => {
   const { model } = useWarehouseStore();
-  const { currentFrame, engine } = useSimulationStore();
+  const { currentFrame } = useSimulationStore();
 
+  const [allTasks, setAllTasks] = useState<WarehouseTask[]>(INITIAL_DEMO_TASKS);
   const [selectedTask, setSelectedTask] = useState<WarehouseTask>(INITIAL_DEMO_TASKS[0]!);
   const [assistanceDispatched, setAssistanceDispatched] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const availableAmrs = model.floors
     .flatMap((f) => f.objects.filter((o) => o.type === 'amr')) as AMRObject[];
 
   const allocationResult = allocateTask(selectedTask, availableAmrs, model.floors);
+
+  const handleTaskCreated = (newTask: WarehouseTask) => {
+    setAllTasks((prev) => [newTask, ...prev]);
+    setSelectedTask(newTask);
+    setAssistanceDispatched(null);
+  };
 
   const handleDispatchAssistance = (type: 'HUMAN_WORKER' | 'FORKLIFT') => {
     setAssistanceDispatched(
@@ -52,9 +62,30 @@ export const TasksScreen: React.FC = () => {
               fontWeight: 700,
               fontSize: '11px',
               color: colors.textSecondary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
             }}
           >
-            ACTIVE & QUEUED WAREHOUSE TASKS
+            <span>ACTIVE & QUEUED WAREHOUSE TASKS ({allTasks.length})</span>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '3px 8px',
+                fontSize: '10px',
+                fontWeight: 700,
+                backgroundColor: colors.primary,
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 3,
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={12} strokeWidth={2.5} /> NEW MISSION
+            </button>
           </div>
 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -78,7 +109,7 @@ export const TasksScreen: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {INITIAL_DEMO_TASKS.map((t) => {
+              {allTasks.map((t) => {
                 const isSelected = selectedTask.id === t.id;
                 return (
                   <tr
@@ -248,6 +279,12 @@ export const TasksScreen: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <AddTaskModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onTaskCreated={handleTaskCreated}
+      />
     </div>
   );
 };

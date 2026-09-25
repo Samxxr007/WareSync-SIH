@@ -47,6 +47,9 @@ interface SimulationStore {
   setSpeed: (speed: number) => void;
   setMode: (mode: SimulationMode, model: WarehouseModel) => void;
   triggerEmergency: (type: any, floorId: string, blockedNodes: string[], desc: string) => void;
+  addTask: (task: WarehouseTask) => void;
+  addTasks: (tasks: WarehouseTask[]) => void;
+  addDynamicObstacle: (obj: any) => void;
 }
 
 export const useSimulationStore = create<SimulationStore>((set, get) => {
@@ -194,6 +197,39 @@ export const useSimulationStore = create<SimulationStore>((set, get) => {
         });
       } else if (sideEngine) {
         sideEngine.triggerEmergencyEvent(type, floorId, blockedNodes, desc);
+        set({ currentFrame: sideEngine.createFrameSnapshot() });
+      }
+    },
+
+    addTask: (task: WarehouseTask) => {
+      const { mode } = get();
+      if (mode !== 'SIDE_BY_SIDE' && worker) {
+        worker.postMessage({ type: 'ADD_TASK', payload: task });
+      } else if (sideEngine) {
+        sideEngine.addTask(task);
+        if (sideBaseline) sideBaseline.addTask(JSON.parse(JSON.stringify(task)));
+        set({ currentFrame: sideEngine.createFrameSnapshot() });
+      }
+    },
+
+    addTasks: (tasks: WarehouseTask[]) => {
+      const { mode } = get();
+      if (mode !== 'SIDE_BY_SIDE' && worker) {
+        worker.postMessage({ type: 'ADD_TASKS', payload: tasks });
+      } else if (sideEngine) {
+        sideEngine.addTasks(tasks);
+        if (sideBaseline) sideBaseline.addTasks(JSON.parse(JSON.stringify(tasks)));
+        set({ currentFrame: sideEngine.createFrameSnapshot() });
+      }
+    },
+
+    addDynamicObstacle: (obj: any) => {
+      const { mode } = get();
+      if (mode !== 'SIDE_BY_SIDE' && worker) {
+        worker.postMessage({ type: 'ADD_OBSTACLE', payload: obj });
+      } else if (sideEngine) {
+        sideEngine.addDynamicObstacle(obj);
+        if (sideBaseline) sideBaseline.addDynamicObstacle(JSON.parse(JSON.stringify(obj)));
         set({ currentFrame: sideEngine.createFrameSnapshot() });
       }
     },

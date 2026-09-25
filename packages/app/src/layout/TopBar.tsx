@@ -5,6 +5,8 @@ import { useSimulationStore } from '../store/simulationStore';
 import { useCompilerStore } from '../store/compilerStore';
 import { ModeTab, AppMode } from '../design-system/components/ModeTab';
 import { colors } from '../design-system/tokens';
+import { AddTaskModal } from '../ui/tasks/AddTaskModal';
+import { Plus } from 'lucide-react';
 
 export const TopBar: React.FC = () => {
   const { mode, setMode, setIsBooting } = useUIStore();
@@ -14,6 +16,7 @@ export const TopBar: React.FC = () => {
 
   const robotCount = model.floors.flatMap((f) => f.objects.filter((o) => o.type === 'amr')).length;
   const floorCount = model.floors.length;
+  const [isAddTaskOpen, setIsAddTaskOpen] = React.useState(false);
 
   return (
     <header
@@ -151,6 +154,27 @@ export const TopBar: React.FC = () => {
         </div>
 
         <button
+          onClick={() => setIsAddTaskOpen(true)}
+          title="Create and dispatch a new warehouse mission to the fleet"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            fontSize: '11px',
+            fontWeight: 700,
+            padding: '4px 10px',
+            backgroundColor: colors.primary,
+            color: '#FFFFFF',
+            border: 'none',
+            borderRadius: '3px',
+            cursor: 'pointer',
+            letterSpacing: '0.04em',
+          }}
+        >
+          <Plus size={13} strokeWidth={2.5} /> NEW TASK
+        </button>
+
+        <button
           onClick={() => setIsBooting(true)}
           title="Replay Smart India Hackathon boot telemetry sequence"
           style={{
@@ -179,6 +203,11 @@ export const TopBar: React.FC = () => {
           RESET DEMO
         </button>
       </div>
+
+      <AddTaskModal
+        isOpen={isAddTaskOpen}
+        onClose={() => setIsAddTaskOpen(false)}
+      />
     </header>
   );
 };
