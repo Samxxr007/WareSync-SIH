@@ -1,0 +1,100 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg-base: #F3F5F7;
+  --bg-workspace: #E9EDF0;
+  --bg-panel: #FFFFFF;
+  --bg-panel-secondary: #F7F8F9;
+  --bg-hover: #EBEFF2;
+  --bg-active: #E1E7EB;
+
+  --border-light: #D5DADE;
+  --border-strong: #B8C0C6;
+  --border-focus: #1769AA;
+
+  --text-primary: #20262B;
+  --text-secondary: #5E6870;
+  --text-muted: #7A848B;
+  --text-inverse: #FFFFFF;
+
+  --primary: #1769AA;
+  --primary-hover: #13568C;
+  --primary-active: #0F4470;
+  --accent-steel: #3D6F8F;
+
+  --success: #2E7D5B;
+  --success-bg: #EAF5F0;
+  --warning: #C88900;
+  --warning-bg: #FDF7EB;
+  --critical: #C63D3D;
+  --critical-bg: #FBEBEB;
+  --info: #2878B5;
+  --info-bg: #EBF4FA;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', Consolas, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border-light);
+  background-color: var(--bg-panel);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+button:hover {
+  background-color: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+button:active {
+  background-color: var(--bg-active);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Custom scrollbars for dense industrial panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-panel-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
